@@ -1,0 +1,17 @@
+{
+  "id": "./",
+  "name": "江味齋 POS",
+  "short_name": "江味齋POS",
+  "description": "江味齋店內收銀系統（單機離線）",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#16171B",
+  "theme_color": "#16171B",
+  "icons": [
+    {"src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}
