@@ -12,11 +12,11 @@
 <style>
 :root{--bg:#16171B;--panel:#1E2026;--card:#272A32;--card2:#30343E;--line:#3A3F4B;--text:#F2F3F5;--muted:#9AA1AE;--red:#D9442F;--red-d:#B03524;--green:#2FA36B;--amber:#E9A23B;--blue:#4C8DF6}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:"Noto Sans TC","Noto Sans CJK TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;font-size:16px;overscroll-behavior:none;user-select:none;-webkit-user-select:none}
+html,body{margin:0;height:100%;height:100dvh;background:var(--bg);color:var(--text);font-family:"Noto Sans TC","Noto Sans CJK TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;font-size:16px;overscroll-behavior:none;user-select:none;-webkit-user-select:none}
 button{font:inherit;color:inherit;border:none;background:none;cursor:pointer;padding:0}
 input,select,textarea{font:inherit;color:var(--text);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 12px;min-height:44px;width:100%;user-select:text;-webkit-user-select:text}
 input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
-#app{height:100%;display:flex;flex-direction:column}
+#app{height:100%;height:100dvh;display:flex;flex-direction:column;overflow:hidden}
 .top{display:flex;align-items:center;gap:6px;padding:6px 10px;background:var(--panel);border-bottom:1px solid var(--line);flex-shrink:0}
 .brand{font-weight:800;font-size:18px;margin-right:8px;white-space:nowrap}.brand b{color:var(--red)}
 .nav{display:flex;gap:4px;flex:1;overflow-x:auto}
@@ -25,17 +25,20 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
 .nav small{display:block;font-size:13px;font-weight:500;opacity:.9}
 .clock{font-size:13px;color:var(--muted);white-space:nowrap;text-align:right}
 .main{flex:1;min-height:0;display:flex}
-.left{flex:1;min-width:0;display:flex;flex-direction:column}
-.cats{display:flex;gap:6px;padding:8px 10px;overflow-x:auto;flex-shrink:0}
+.left{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}
+.cats{display:flex;flex-wrap:wrap;gap:6px;padding:8px 10px;flex-shrink:0}
 .cats button{padding:10px 16px;border-radius:999px;background:var(--card);white-space:nowrap;min-height:44px;font-weight:600}
 .cats button.on{background:var(--red)}
-.catbar{display:flex;align-items:center;flex-shrink:0}.catbar .cats{flex:1;min-width:0}
-.modes{display:flex;gap:6px;padding:8px 10px 8px 4px;flex-shrink:0}
-.so{padding:10px 14px;border-radius:999px;min-height:44px;font-weight:600;white-space:nowrap;border:1px dashed var(--line);color:var(--muted)}
+.tools{display:flex;gap:6px;flex-shrink:0;margin-left:6px}
+.so{padding:8px 12px;border-radius:8px;min-height:44px;font-weight:600;white-space:nowrap;border:1px dashed var(--line);color:var(--muted)}
+.so small{display:block;font-size:12px}
 .so.on{background:var(--amber);color:#111;border-style:solid}
-.grid{flex:1;overflow-y:auto;padding:4px 10px 12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:8px;align-content:start}
+.tip{margin:0 10px 6px;padding:8px 12px;border-radius:8px;background:var(--amber);color:#111;font-weight:700;font-size:15px}
+.cartbar{display:none}.sheetBack{display:none}
+.grid{flex:1;overflow-y:auto;padding:4px 10px 12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:8px;align-content:start;grid-auto-rows:max-content}
 .item{background:var(--card);border-radius:12px;padding:10px;min-height:118px;text-align:left;display:flex;flex-direction:column;justify-content:space-between;border:1px solid transparent;position:relative}
 .item:active{background:var(--card2);border-color:var(--red)}
+.item{cursor:pointer}
 .item .zh{font-weight:700;font-size:17px;line-height:1.25}
 .item .en{font-size:15.5px;font-weight:600;color:#C9CED8;line-height:1.25;margin-top:3px}
 .item .code{display:inline-block;background:var(--red);color:#fff;font-weight:800;font-size:15px;border-radius:6px;padding:1px 8px;margin-bottom:5px}
@@ -43,9 +46,13 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
 .cd{color:var(--amber);font-weight:800;margin-right:4px}
 .item .pr{font-weight:700;color:var(--amber);margin-top:6px}
 .item .ph{width:calc(100% + 20px);margin:-10px -10px 8px;height:104px;object-fit:cover;border-radius:12px 12px 0 0;display:block;background:var(--card2)}
-.item .badge{position:absolute;top:-6px;right:-6px;min-width:34px;height:34px;padding:0 8px;border-radius:999px;background:var(--green);color:#fff;font-weight:800;font-size:18px;display:flex;align-items:center;justify-content:center;border:2px solid var(--bg);z-index:1}
-.item .badge[hidden]{display:none}
-.item.has{border-color:var(--green)}
+.item.has{border-color:var(--green);background:#22302B}
+.step{display:none;align-items:center;gap:6px;margin-top:8px}
+.item.has .step{display:flex}.item.has .pr{display:none}
+.step button{flex:1;height:48px;border-radius:10px;font-size:26px;font-weight:800}
+.step .minus{background:var(--red);color:#fff}.step .plus{background:var(--green);color:#fff}
+.step b{min-width:40px;text-align:center;font-size:24px}
+.step small{display:block;font-size:12px;font-weight:600;color:var(--amber);text-align:center}
 .item .new{display:inline-block;background:var(--amber);color:#111;font-weight:800;font-size:12px;border-radius:6px;padding:2px 6px;margin-left:4px;vertical-align:top}
 .item.addnew{align-items:center;justify-content:center;border:2px dashed var(--line);background:none;color:var(--muted);font-weight:700;text-align:center}
 .grid{padding-top:10px}
@@ -62,7 +69,7 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
 .ln .info{flex:1;min-width:0;text-align:left}
 .ln .nm{font-weight:600}.ln .sub{font-size:14.5px;color:var(--muted);line-height:1.35}.ln .sub.m{color:var(--amber)}
 .ln .amt{font-weight:700;white-space:nowrap}
-.qb{width:40px;height:40px;border-radius:8px;background:var(--card2);font-size:22px;font-weight:700;flex-shrink:0}
+.qb{width:46px;height:46px;border-radius:8px;background:var(--card2);font-size:22px;font-weight:700;flex-shrink:0}
 .q{min-width:22px;text-align:center;font-weight:700}
 .tot{border-top:1px solid var(--line);padding:8px 10px}
 .tot div{display:flex;justify-content:space-between;font-size:14px;color:var(--muted);padding:1px 0}
@@ -109,7 +116,17 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 #toast.on{opacity:.92}
 .prev{background:#fff;border-radius:6px;max-width:100%;display:block;margin:0 auto 8px}
 .pinDots{font-size:30px;letter-spacing:10px;text-align:center;min-height:44px}
-@media (max-width:760px){.main{flex-direction:column}.right{width:100%;border-left:none;border-top:1px solid var(--line);max-height:55%}.payg{grid-template-columns:1fr}}
+@media (max-width:1100px){.right{width:340px}}
+/* 窄螢幕（直放或小平板）：菜單佔滿畫面，訂單收在底部長條，點開變整頁 */
+@media (max-width:899px){
+  .clock,.brand{display:none}
+  .right{position:fixed;inset:0;width:100%;z-index:5;border:none;display:none}
+  .main.open .right{display:flex}
+  .sheetBack{display:block;margin:8px;padding:12px;border-radius:10px;background:var(--card2);font-weight:700;font-size:16px;min-height:52px}
+  .cartbar{display:flex;gap:8px;padding:8px 10px;background:var(--panel);border-top:1px solid var(--line);flex-shrink:0}
+  .cartbar .btn{flex:1;min-height:60px;font-size:17px}
+  .payg{grid-template-columns:1fr}
+}
 </style>
 </head>
 <body>
@@ -119,7 +136,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 <script>
 "use strict";
 /* ============ 江味齋 POS：單機、離線、資料存在本機 IndexedDB；列印走 RawBT（圖片） ============ */
-const APP_VER="1.2.0";
+const APP_VER="1.3.0";
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const pad2=n=>String(n).padStart(2,"0");
@@ -186,7 +203,7 @@ function compressPhoto(file){return new Promise((res,rej)=>{const img=new Image(
 const newCart=()=>({lines:[],type:"外帶",source:"",customer:"",note:"",disc:null});
 
 /* ---------- 狀態 ---------- */
-const S={view:"sell",cat:null,soMode:false,editMode:false,cart:newCart(),settings:null,menu:null,days:{},held:[],orders:[],date:dkey(),unlocked:false};
+const S={view:"sell",cat:null,soMode:false,editMode:false,cartOpen:false,cart:newCart(),settings:null,menu:null,days:{},held:[],orders:[],date:dkey(),unlocked:false};
 const day=k=>(S.days[k]=S.days[k]||{float:0,moves:[],counted:null,closedAt:null});
 const save={
   cart:()=>DB.set("cart",S.cart).catch(()=>{}),
@@ -251,7 +268,7 @@ let lastView="";
 function render(){
   const v=S.view,pg0=$(".page"),keepY=pg0&&lastView===v?pg0.scrollTop:0;lastView=v;
   setTimeout(()=>{const pg=$(".page");if(pg&&keepY)pg.scrollTop=keepY;},0);
-  $("#app").innerHTML=`<div class="top"><div class="brand"><b>江味齋</b> POS</div><div class="nav">${NAV.map(([k,z,e])=>`<button class="${v===k?"on":""}" data-act="nav" data-v="${k}">${z}<small>${e}</small></button>`).join("")}</div><div class="clock" id="clock"></div></div>`+
+  $("#app").innerHTML=`<div class="top"><div class="brand"><b>江味齋</b> POS</div><div class="nav">${NAV.map(([k,z,e])=>`<button class="${v===k?"on":""}" data-act="nav" data-v="${k}">${z}<small>${e}</small></button>`).join("")}</div>${v==="sell"?`<div class="tools"><button class="so ${S.soMode?"on":""}" data-act="soMode">${S.soMode?"完成":"售完"}<small>${S.soMode?"Done":"Sold out"}</small></button><button class="so ${S.editMode?"on":""}" data-act="editMode">${S.editMode?"完成":"✎ 編輯"}<small>${S.editMode?"Done":"Edit"}</small></button></div>`:""}<div class="clock" id="clock"></div></div>`+
     (v==="sell"?vSell():`<div class="page">${v==="orders"?vOrders():v==="report"?vReport():v==="menu"?vMenu():vSettings()}</div>`);
   tick();
 }
@@ -264,22 +281,24 @@ function vSell(){
   const tabs=[...(news.length?[{id:"__new",code:"⭐",name:"新品",nameEn:"New"}]:[]),...m.cats];
   if(!tabs.find(c=>c.id===S.cat))S.cat=tabs[0]?tabs[0].id:null;
   const items=S.cat==="__new"?news:m.items.filter(i=>i.catId===S.cat);
-  const modeTip=S.soMode?"售完設定中：點品項切換售完":S.editMode?"編輯模式：點品項可改名稱、價格、照片、新品":"";
-  return `<div class="main"><div class="left">
-    <div class="catbar"><div class="cats">${tabs.map(c=>`<button class="${c.id===S.cat?"on":""}" data-act="cat" data-v="${c.id}">${esc(c.code||"")} · ${esc(c.name)} <small>${esc(c.nameEn||"")}</small></button>`).join("")}</div>
-      <div class="modes"><button class="so ${S.soMode?"on":""}" data-act="soMode">${S.soMode?"完成 Done":"售完 Sold out"}</button>
-      <button class="so ${S.editMode?"on":""}" data-act="editMode">${S.editMode?"完成 Done":"✎ 編輯 Edit"}</button></div></div>
-    ${modeTip?`<div style="padding:0 12px 4px;color:var(--amber);font-weight:700;font-size:14px">${modeTip}</div>`:""}
-    <div class="grid">${items.map(i=>{const q=cartQty(i.id),src=itemImg(i);return `<button class="item${i.soldOut?" sold":""}${q?" has":""}" data-act="add" data-v="${i.id}">
-        <span class="badge" data-q="${i.id}" ${q?"":"hidden"}>${q||""}</span>
-        <div>${src?`<img class="ph" src="${esc(src)}" alt="" loading="lazy"/>`:""}<div><span class="code">${esc(i.code||"")}</span>${isNewNow(i)?'<span class="new">NEW 新品</span>':""}</div><div class="zh">${esc(i.name)}</div><div class="en">${esc(i.nameEn||"")}</div></div><div class="pr">${R(i.price)}</div></button>`;}).join("")||(S.editMode?"":`<div class="empty">這個類別還沒有品項，請按右上「✎ 編輯」新增</div>`)}
+  const tip=S.soMode?"售完設定中：點品項切換「售完」，完成後按右上角「完成」":S.editMode?"編輯模式：點品項可改名稱、價格、照片、新品；完成後按右上角「完成」":"";
+  return `<div class="main${S.cartOpen?" open":""}" id="sellMain"><div class="left">
+    <div class="cats">${tabs.map(c=>`<button class="${c.id===S.cat?"on":""}" data-act="cat" data-v="${c.id}">${esc(c.code||"")} · ${esc(c.name)} <small>${esc(c.nameEn||"")}</small></button>`).join("")}</div>
+    ${tip?`<div class="tip">${tip}</div>`:""}
+    <div class="grid">${items.map(i=>{const q=cartQty(i.id),src=itemImg(i);return `<div class="item${i.soldOut?" sold":""}${q?" has":""}" role="button" tabindex="0" data-act="add" data-v="${i.id}" data-tile="${i.id}">
+        <div>${src?`<img class="ph" src="${esc(src)}" alt="" loading="lazy"/>`:""}<div><span class="code">${esc(i.code||"")}</span>${isNewNow(i)?'<span class="new">NEW 新品</span>':""}</div><div class="zh">${esc(i.name)}</div><div class="en">${esc(i.nameEn||"")}</div></div>
+        <div><div class="pr">${R(i.price)}</div><div class="step"><button class="minus" data-act="tdec" data-v="${i.id}" aria-label="減少 ${esc(i.name)}">−</button><b data-q="${i.id}">${q}</b><button class="plus" data-act="add" data-v="${i.id}" aria-label="增加 ${esc(i.name)}">＋</button></div></div></div>`;}).join("")||(S.editMode?"":`<div class="empty">這個類別還沒有品項，請按右上角「✎ 編輯」新增</div>`)}
       ${S.editMode?`<button class="item addnew" data-act="itNew">＋ 新增品項<br/>Add item</button>`:""}</div>
+    <div class="cartbar" id="cartBar">${cartBarHtml()}</div>
   </div><div class="right" id="cartPane">${cartHtml()}</div></div>`;
 }
-function drawBadges(){document.querySelectorAll(".item .badge[data-q]").forEach(b=>{const q=cartQty(b.dataset.q);b.textContent=q||"";b.hidden=!q;b.parentNode.classList.toggle("has",!!q);});}
+function cartBarHtml(){const t=calc(S.cart),n=S.cart.lines.length;
+  return `<button class="btn" data-act="cartOpen">🧾 訂單 ${t.qty} 件<small>View order${S.held.length?" · 掛單 "+S.held.length:""}</small></button><button class="btn pri" data-act="pay" ${n?"":"disabled"}>結帳 Pay ${R(t.total)}</button>`;}
+function drawBadges(){document.querySelectorAll("[data-tile]").forEach(el=>{const q=cartQty(el.dataset.tile);el.classList.toggle("has",!!q);const b=el.querySelector("[data-q]");if(b)b.textContent=q;});
+  const bar=$("#cartBar");if(bar)bar.innerHTML=cartBarHtml();}
 function cartHtml(){
   const c=S.cart,t=calc(c),src=S.settings.sources;
-  return `<div class="meta">
+  return `<button class="sheetBack" data-act="cartClose">← 繼續點餐 Back to menu</button><div class="meta">
       <div class="seg">${TYPES.map(([z,e])=>`<button class="${c.type===z?"on":""}" data-act="type" data-v="${z}">${z} ${e}</button>`).join("")}</div>
       <select id="cSrc" aria-label="訂單來源 Source">${src.map(s=>`<option${s===(c.source||src[0])?" selected":""}>${esc(s)}</option>`).join("")}</select>
       <input id="cName" placeholder="稱呼／桌號 Name" maxlength="30" value="${esc(c.customer)}" aria-label="稱呼或桌號"/>
@@ -310,7 +329,7 @@ const A={
     if(["report","menu","settings"].includes(v)&&!S.unlocked){if(!(await needPin()))return;S.unlocked=true;}
     if(v==="sell")S.unlocked=false;
     if(v==="orders"||v==="report"){S.date=S.date||dkey();S.orders=await DB.byDate(S.date);}
-    S.view=v;S.soMode=false;S.editMode=false;render();},
+    S.view=v;S.soMode=false;S.editMode=false;S.cartOpen=false;render();},
   cat(el){S.cat=el.dataset.v;render();},
   soMode(){S.soMode=!S.soMode;S.editMode=false;render();},
   async editMode(){if(!S.editMode&&!(await needPin()))return;S.editMode=!S.editMode;S.soMode=false;render();},
@@ -321,6 +340,9 @@ const A={
     const ex=S.cart.lines.find(l=>l.itemId===it.id&&!l.mods.length&&!l.note&&!(l.disc&&l.disc.val));
     if(ex)ex.qty++;else S.cart.lines.push({itemId:it.id,code:it.code||"",catId:it.catId,name:it.name,nameEn:it.nameEn||"",price:it.price,qty:1,mods:[],note:"",disc:null});
     drawCart();const sc=$("#cartPane .lines");if(sc&&!ex)sc.scrollTop=sc.scrollHeight;},
+  tdec(el){const id=el.dataset.v,ls=S.cart.lines;for(let i=ls.length-1;i>=0;i--)if(ls[i].itemId===id){if(ls[i].qty>1)ls[i].qty--;else ls.splice(i,1);break;}drawCart();},
+  cartOpen(){S.cartOpen=true;const m=$("#sellMain");if(m)m.classList.add("open");},
+  cartClose(){S.cartOpen=false;const m=$("#sellMain");if(m)m.classList.remove("open");},
   inc(el){S.cart.lines[+el.dataset.i].qty++;drawCart();},
   dec(el){const i=+el.dataset.i,l=S.cart.lines[i];if(l.qty>1)l.qty--;else S.cart.lines.splice(i,1);drawCart();},
   type(el){S.cart.type=el.dataset.v;drawCart();},
@@ -430,7 +452,7 @@ async function commitOrder(pays,t){
     lines:c.lines.map(l=>({itemId:l.itemId,code:l.code||"",catId:l.catId,name:l.name,nameEn:l.nameEn,price:l.price,qty:l.qty,mods:l.mods,note:l.note,disc:l.disc})),disc:c.disc,
     gross:t.gross,discTotal:t.disc,total:t.total,payments:pays,change,status:"paid"};
   await DB.putOrder(o);
-  S.cart=newCart();await save.cart();
+  S.cart=newCart();S.cartOpen=false;await save.cart();
   return o;
 }
 function doneBox(o){
