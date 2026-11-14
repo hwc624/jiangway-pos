@@ -136,7 +136,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 <script>
 "use strict";
 /* ============ 江味齋 POS：單機、離線、資料存在本機 IndexedDB；列印走 RawBT（圖片） ============ */
-const APP_VER="1.3.0";
+const APP_VER="1.4.0";
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const pad2=n=>String(n).padStart(2,"0");
@@ -200,6 +200,43 @@ function compressPhoto(file){return new Promise((res,rej)=>{const img=new Image(
     c.getContext("2d").drawImage(img,(img.naturalWidth-sd)/2,(img.naturalHeight-sd)/2,sd,sd,0,0,E,E);
     let out=c.toDataURL("image/webp",0.72);if(out.indexOf("data:image/webp")!==0)out=c.toDataURL("image/jpeg",0.72);res(out);}catch(e){rej(e);}finally{URL.revokeObjectURL(u);}};
   img.onerror=()=>{URL.revokeObjectURL(u);rej(new Error("無法讀取這張圖片"));};img.src=u;});}
+/* 從點餐 App 帶入更新：只「讀」點餐 App 公開的菜單資料（新品、新類別、照片），不會寫回去，也不動 POS 自己的價格與訂單。
+   需要網路；平常收銀仍然完全離線。 */
+const APP_DB="https://jiangway-bk-end-management-default-rtdb.asia-southeast1.firebasedatabase.app";
+const APP_ID={b1:"c1_0",b8:"c1_1",b9:"c1_2",b2:"c1_3",b5:"c1_4",b6:"c1_5",b3:"c1_6",b4:"c1_7",b7:"c1_8",a1:"c2_0",a10:"c2_1",a3:"c2_2",a12:"c2_3",a2:"c2_4",a4:"c2_5",a5:"c2_6",a6:"c2_7",a7:"c2_8",a8:"c2_9",a9:"c2_10",a11:"c2_11",n1:"c3_0",n2:"c3_1",n3:"c3_2",d1:"c4_0",d2:"c4_1",d9:"c4_2",d11:"c4_3",d4:"c4_4",d5:"c4_5",d8:"c4_6",d10:"c4_7"};
+const APP_CAT=[[/^便當/,"c1"],[/^單點/,"c2"],[/^麵/,"c3"],[/^飲料/,"c4"]];
+const PHOTO_RE=/^data:image\/(webp|jpeg|png);base64,[A-Za-z0-9+\/]+={0,2}$/;
+const okPhoto=p=>typeof p==="string"&&p.length<=200000&&PHOTO_RE.test(p);
+async function syncFromApp(quiet){
+  const get=async n=>{const c=new AbortController(),t=setTimeout(()=>c.abort(),20000);try{const r=await fetch(APP_DB+"/"+n+".json",{signal:c.signal,cache:"no-store"});if(!r.ok)throw new Error("HTTP "+r.status);return (await r.json())||{};}finally{clearTimeout(t);}};
+  let cats,customs,ovr;
+  try{[cats,customs,ovr]=await Promise.all(["categories","custom_items","menu_overrides"].map(get));}
+  catch(e){if(!quiet)toast("無法連到點餐 App（請確認平板有網路）");return null;}
+  const m=S.menu,res={cats:0,items:0,photos:0};
+  const str=(v,n)=>String(v==null?"":v).slice(0,n);
+  // 1) 點餐 App 新增的類別
+  const catOf=key=>{key=String(key||"");const hit=m.cats.find(c=>c.appKey===key);if(hit)return hit.id;
+    for(const [re,id] of APP_CAT)if(re.test(key)&&m.cats.some(c=>c.id===id))return id;return null;};
+  Object.values(cats).filter(c=>c&&!c.builtin&&!c.hidden&&c.key).sort((a,b)=>(a.order||0)-(b.order||0)).forEach(c=>{
+    if(m.cats.some(x=>x.appKey===c.key))return;
+    const same=m.cats.find(x=>x.name===str(c.nameZh,20));
+    if(same){same.appKey=c.key;return;}
+    m.cats.push({id:uid(),code:"",name:str(c.nameZh||c.key,20),nameEn:str(c.nameEn,40),appKey:c.key});res.cats++;});
+  ensureCodes();
+  // 2) 點餐 App 後台新增的品項（30 天內的算新品）
+  Object.values(customs).filter(c=>c&&c.id&&c.name&&!c.hidden&&Number(c.price)>0).forEach(c=>{
+    const ph=okPhoto(c.photo)?c.photo:"";let it=m.items.find(x=>x.appId===c.id);
+    if(!it){const catId=catOf(c.category)||(m.cats[0]&&m.cats[0].id);if(!catId)return;const created=Number(c.createdAt)||Date.now();
+      it={id:uid(),appId:c.id,code:"",catId,name:str(c.name,40),nameEn:str(c.nameEn,60),price:Math.round(Number(c.price)*100),soldOut:false,isNew:true,newAt:created,photo:ph,photoFrom:ph?"app":""};
+      it.code=nextCode(catId);m.items.push(it);res.items++;if(ph)res.photos++;}
+    else if(ph&&it.photoFrom!=="none"&&(!it.photo||it.photoFrom==="app")&&it.photo!==ph){it.photo=ph;it.photoFrom="app";res.photos++;}});
+  // 3) 原有品項在點餐 App 換上的照片（POS 上自己拍的照片不會被蓋掉）
+  Object.entries(ovr).forEach(([aid,o])=>{const it=m.items.find(x=>x.id===APP_ID[aid]);if(!it||!o||!okPhoto(o.photo))return;
+    if(it.photoFrom!=="none"&&(!it.photo||it.photoFrom==="app")&&it.photo!==o.photo){it.photo=o.photo;it.photoFrom="app";res.photos++;}});
+  m.appSyncedAt=Date.now();await save.menu();
+  if(!quiet||res.cats||res.items||res.photos)toast(`已從點餐 App 更新：新類別 ${res.cats}、新品項 ${res.items}、照片 ${res.photos}`);
+  return res;
+}
 const newCart=()=>({lines:[],type:"外帶",source:"",customer:"",note:"",disc:null});
 
 /* ---------- 狀態 ---------- */
@@ -541,7 +578,7 @@ function exportCsv(orders,name){
 function vMenu(){
   const m=S.menu;
   return `<h2>菜單管理 Menu</h2>
-  <div class="row" style="margin-bottom:8px"><button class="btn pri" style="padding:10px 16px" data-act="itNew">＋ 新增品項 Item</button><button class="btn" style="padding:10px 16px" data-act="catNew">＋ 新增類別 Category</button><button class="btn" style="padding:10px 16px" data-act="modNew">＋ 新增客製選項 Option</button></div>
+  <div class="row" style="margin-bottom:8px"><button class="btn pri" style="padding:10px 16px" data-act="itNew">＋ 新增品項 Item</button><button class="btn" style="padding:10px 16px" data-act="catNew">＋ 新增類別 Category</button><button class="btn" style="padding:10px 16px" data-act="modNew">＋ 新增客製選項 Option</button><button class="btn warn" style="padding:10px 16px" data-act="appSync">⟳ 從點餐 App 更新新品與照片</button></div>
   ${m.cats.map((c,ci)=>`<h3><span class="cd">${esc(c.code||"")}</span>${esc(c.name)} ${esc(c.nameEn||"")} <button class="btn ghost" style="padding:4px 10px;min-height:36px;font-size:13px" data-act="catEdit" data-v="${c.id}">編輯</button> <button class="btn ghost" style="padding:4px 10px;min-height:36px;font-size:13px" data-act="catUp" data-v="${ci}" ${ci?"":"disabled"}>↑</button></h3>
     <div class="cardb"><table>${m.items.filter(i=>i.catId===c.id).map(i=>`<tr><td>${itemImg(i)?`<img class="thumb" src="${esc(itemImg(i))}" alt="" loading="lazy"/>`:""}<span class="cd">${esc(i.code||"")}</span>${esc(i.name)}${isNewNow(i)?' <span class="tag" style="background:var(--amber);color:#111">NEW</span>':""} <span style="color:#C9CED8;font-size:15px">${esc(i.nameEn||"")}</span>${i.soldOut?' <span class="tag">售完</span>':""}</td><td class="n">${R(i.price)}</td><td class="n" style="width:90px"><button class="btn ghost" style="padding:6px 12px;min-height:40px" data-act="itEdit" data-v="${i.id}">編輯</button></td></tr>`).join("")||'<tr><td style="color:var(--muted)">（沒有品項）</td></tr>'}</table></div>`).join("")}
   <h3>客製選項 Options（加料、口味）</h3><div class="cardb"><table>${m.mods.map(o=>`<tr><td>${esc(o.name)} <span style="color:var(--muted);font-size:12px">${esc(o.nameEn||"")}</span></td><td>${o.catIds&&o.catIds.length?o.catIds.map(id=>esc((m.cats.find(c=>c.id===id)||{}).name||"")).join("、"):"全部類別"}</td><td class="n">${o.price?"+"+R(o.price):"免費"}</td><td class="n" style="width:90px"><button class="btn ghost" style="padding:6px 12px;min-height:40px" data-act="modEdit" data-v="${o.id}">編輯</button></td></tr>`).join("")||'<tr><td style="color:var(--muted)">（沒有選項）</td></tr>'}</table></div>`;
@@ -554,7 +591,7 @@ async function itemForm(it){
   else{const p=toCents(r.price);if(!r.name||!(p>=0)){toast("請填名稱與正確價格");return itemForm(it);}
     const code=(r.code||"").toUpperCase()||((it&&it.catId===r.catId&&it.code)||nextCode(r.catId));
     if(m.items.some(x=>x!==it&&x.code===code)){toast("編號 "+code+" 已被其他品項使用");return itemForm(it);}
-    const ph=r.photo===(it?itemImg(it):"")?{}:(r.photo?{photo:r.photo}:{photo:"",img:""});
+    const ph=r.photo===(it?itemImg(it):"")?{}:(r.photo?{photo:r.photo,photoFrom:""}:{photo:"",img:"",photoFrom:"none"});
     const nw={isNew:r.isNew,newAt:r.isNew?((it&&isNewNow(it)&&it.newAt)||Date.now()):0};
     if(it)Object.assign(it,{code,name:r.name,nameEn:r.nameEn,price:p,catId:r.catId,soldOut:r.soldOut},ph,nw);else m.items.push({id:uid(),code,name:r.name,nameEn:r.nameEn,price:p,catId:r.catId,soldOut:r.soldOut,...ph,...nw});}
   await save.menu();render();
@@ -575,6 +612,7 @@ async function modForm(o){
   await save.menu();render();
 }
 Object.assign(A,{
+  async appSync(el){el.disabled=true;el.textContent="更新中…";await syncFromApp(false);render();},
   itNew(){itemForm(null);},itEdit(el){itemForm(S.menu.items.find(i=>i.id===el.dataset.v));},
   catNew(){catForm(null);},catEdit(el){catForm(S.menu.cats.find(c=>c.id===el.dataset.v));},
   async catUp(el){const i=+el.dataset.v,c=S.menu.cats;if(i>0){[c[i-1],c[i]]=[c[i],c[i-1]];await save.menu();render();}},
@@ -588,6 +626,7 @@ function vSettings(){
   <div class="cardb"><b>店家資料（印在收據上）</b><div style="color:var(--muted);font-size:14px;margin:6px 0">${esc(s.shopName)} ${esc(s.shopEn)}<br/>${esc(s.addr||"（未填地址）")}<br/>${esc(s.phone||"（未填電話）")}<br/>頁尾：${esc(s.footer)}</div><button class="btn" style="padding:10px 16px" data-act="setShop">編輯 Edit</button></div>
   <div class="cardb"><b>列印 Printing</b><div style="color:var(--muted);font-size:14px;margin:6px 0">結帳後自動列印：${s.autoPrint?"開":"關"}　·　內容：${{both:"廚房單＋收據",receipt:"只印收據",kitchen:"只印廚房單"}[s.printMode]}<br/>列印透過 RawBT App 送到藍牙出單機（58mm）。${isAndroid?"":"這台不是 Android，按列印只會顯示預覽圖。"}</div>
     <div class="row"><button class="btn" style="padding:10px 16px" data-act="setPrint">編輯 Edit</button><button class="btn" style="padding:10px 16px" data-act="testPrint">測試列印 Test print</button></div></div>
+  <div class="cardb"><b>從點餐 App 更新 Import from ordering app</b><div style="color:var(--muted);font-size:14px;margin:6px 0">把點餐 App 後台新增的類別、新品和照片帶進 POS（需要網路）。只讀取、不會改點餐 App；POS 自己的價格、訂單和你在平板上拍的照片都不會被蓋掉。<br/>上次更新：${S.menu.appSyncedAt?dtstr(S.menu.appSyncedAt):"尚未更新"}</div><button class="btn warn" style="padding:10px 16px" data-act="appSync">⟳ 立即更新 Update now</button></div>
   <div class="cardb"><b>訂單來源 Sources</b><div style="color:var(--muted);font-size:14px;margin:6px 0">${s.sources.map(esc).join("、")}</div><button class="btn" style="padding:10px 16px" data-act="setSrc">編輯 Edit</button></div>
   <div class="cardb"><b>權限 Security</b><div style="color:var(--muted);font-size:14px;margin:6px 0">報表、菜單、設定、作廢都需要店主 PIN。折扣需要 PIN：${s.discPin?"是":"否"}</div>
     <div class="row"><button class="btn" style="padding:10px 16px" data-act="chPin">更改 PIN</button><button class="btn" style="padding:10px 16px" data-act="tgDiscPin">折扣${s.discPin?"不需":"需要"} PIN</button></div></div>
@@ -723,6 +762,7 @@ function printCanvas(c){
     if(ensureCodes()||!menu)await save.menu();if(!st)await save.settings();
     if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().then(ok=>{S.persisted=ok;});
     render();
+    if(!S.menu.appSyncedAt&&navigator.onLine!==false)syncFromApp(true).then(r=>{if(r&&S.view==="sell"&&!$("#modal").classList.contains("on"))render();});
   }catch(e){$("#app").innerHTML=`<div class="empty">無法開啟本機資料庫：${esc(e&&e.message||e)}<br/>請不要用無痕模式開啟，並確認瀏覽器允許儲存資料。</div>`;}
 })();
 if("serviceWorker" in navigator&&location.protocol.startsWith("http"))navigator.serviceWorker.register("sw.js").catch(()=>{});

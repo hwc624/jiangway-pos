@@ -1,5 +1,5 @@
 // 江味齋 POS：先回快取（開頁快、沒網路也能用），背景再抓新版，下次開啟生效。
-const CACHE='jwpos-v4';
+const CACHE='jwpos-v5';
 const SHELL=['./','index.html','manifest.json','icons/icon-192.png','icons/icon-512.png','icons/icon-maskable-512.png','img/real-b1.webp','img/real-b2.webp','img/real-b4.webp','img/real-b5.webp','img/real-a7.webp','img/congyoubing.webp','img/milktea.webp'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(SHELL)).then(()=>self.skipWaiting()));});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});
