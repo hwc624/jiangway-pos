@@ -29,8 +29,10 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
 .cats{display:flex;gap:6px;padding:8px 10px;overflow-x:auto;flex-shrink:0}
 .cats button{padding:10px 16px;border-radius:999px;background:var(--card);white-space:nowrap;min-height:44px;font-weight:600}
 .cats button.on{background:var(--red)}
-.cats .so{background:none;border:1px dashed var(--line);color:var(--muted);margin-left:auto}
-.cats .so.on{background:var(--amber);color:#111;border-style:solid}
+.catbar{display:flex;align-items:center;flex-shrink:0}.catbar .cats{flex:1;min-width:0}
+.modes{display:flex;gap:6px;padding:8px 10px 8px 4px;flex-shrink:0}
+.so{padding:10px 14px;border-radius:999px;min-height:44px;font-weight:600;white-space:nowrap;border:1px dashed var(--line);color:var(--muted)}
+.so.on{background:var(--amber);color:#111;border-style:solid}
 .grid{flex:1;overflow-y:auto;padding:4px 10px 12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:8px;align-content:start}
 .item{background:var(--card);border-radius:12px;padding:10px;min-height:118px;text-align:left;display:flex;flex-direction:column;justify-content:space-between;border:1px solid transparent;position:relative}
 .item:active{background:var(--card2);border-color:var(--red)}
@@ -40,6 +42,14 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
 .cats small{font-size:14px;font-weight:600}
 .cd{color:var(--amber);font-weight:800;margin-right:4px}
 .item .pr{font-weight:700;color:var(--amber);margin-top:6px}
+.item .ph{width:calc(100% + 20px);margin:-10px -10px 8px;height:104px;object-fit:cover;border-radius:12px 12px 0 0;display:block;background:var(--card2)}
+.item .badge{position:absolute;top:-6px;right:-6px;min-width:34px;height:34px;padding:0 8px;border-radius:999px;background:var(--green);color:#fff;font-weight:800;font-size:18px;display:flex;align-items:center;justify-content:center;border:2px solid var(--bg);z-index:1}
+.item .badge[hidden]{display:none}
+.item.has{border-color:var(--green)}
+.item .new{display:inline-block;background:var(--amber);color:#111;font-weight:800;font-size:12px;border-radius:6px;padding:2px 6px;margin-left:4px;vertical-align:top}
+.item.addnew{align-items:center;justify-content:center;border:2px dashed var(--line);background:none;color:var(--muted);font-weight:700;text-align:center}
+.grid{padding-top:10px}
+.thumb{width:44px;height:44px;border-radius:8px;object-fit:cover;vertical-align:middle;margin-right:8px}
 .item.sold{opacity:.45}.item.sold::after{content:"售完 Sold out";position:absolute;right:8px;bottom:8px;font-size:11px;background:var(--line);padding:2px 6px;border-radius:6px}
 .right{width:380px;flex-shrink:0;background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
 .meta{padding:8px;display:grid;grid-template-columns:1fr 1fr;gap:6px;border-bottom:1px solid var(--line)}
@@ -109,7 +119,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 <script>
 "use strict";
 /* ============ 江味齋 POS：單機、離線、資料存在本機 IndexedDB；列印走 RawBT（圖片） ============ */
-const APP_VER="1.1.0";
+const APP_VER="1.2.0";
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const pad2=n=>String(n).padStart(2,"0");
@@ -160,11 +170,23 @@ function nextCode(catId){const c=S.menu.cats.find(x=>x.id===catId),pre=(c&&c.cod
   let code;do{n++;code=pre+n;}while(S.menu.items.some(i=>i.code===code));return code;}
 function ensureCodes(){let ch=false;const used=new Set(S.menu.cats.map(c=>c.code).filter(Boolean));
   S.menu.cats.forEach(c=>{if(!c.code){let k=0,code;do{code=String.fromCharCode(65+k%26)+(k>=26?Math.floor(k/26):"");k++;}while(used.has(code));used.add(code);c.code=code;ch=true;}});
-  S.menu.items.forEach(i=>{if(!i.code){i.code=nextCode(i.catId);ch=true;}});return ch;}
+  S.menu.items.forEach(i=>{if(!i.code){i.code=nextCode(i.catId);ch=true;}});
+  if(!S.menu.imgSeeded){S.menu.items.forEach(i=>{if(SEED_IMG[i.id]&&!i.photo&&i.img===undefined)i.img=SEED_IMG[i.id];});S.menu.imgSeeded=true;ch=true;}
+  return ch;}
+/* 新品：品項標「新品」後出現在最前面的「⭐ 新品」分頁，30 天後自動移除（品項仍留在原類別） */
+const NEW_DAYS=30,isNewNow=i=>!!i.isNew&&Date.now()-(i.newAt||0)<NEW_DAYS*864e5;
+/* 照片：photo＝店主在平板上傳（壓縮後存本機）；img＝隨 App 附的照片檔名 */
+const itemImg=i=>i.photo||(i.img?"img/"+i.img+".webp":"");
+const SEED_IMG={c1_0:"real-b1",c1_3:"real-b2",c1_7:"real-b4",c1_4:"real-b5",c2_8:"real-a7",c2_0:"congyoubing",c4_1:"milktea"};
+function compressPhoto(file){return new Promise((res,rej)=>{const img=new Image(),u=URL.createObjectURL(file);
+  img.onload=()=>{try{const E=400,c=document.createElement("canvas");c.width=c.height=E;const sd=Math.min(img.naturalWidth,img.naturalHeight);
+    c.getContext("2d").drawImage(img,(img.naturalWidth-sd)/2,(img.naturalHeight-sd)/2,sd,sd,0,0,E,E);
+    let out=c.toDataURL("image/webp",0.72);if(out.indexOf("data:image/webp")!==0)out=c.toDataURL("image/jpeg",0.72);res(out);}catch(e){rej(e);}finally{URL.revokeObjectURL(u);}};
+  img.onerror=()=>{URL.revokeObjectURL(u);rej(new Error("無法讀取這張圖片"));};img.src=u;});}
 const newCart=()=>({lines:[],type:"外帶",source:"",customer:"",note:"",disc:null});
 
 /* ---------- 狀態 ---------- */
-const S={view:"sell",cat:null,soMode:false,cart:newCart(),settings:null,menu:null,days:{},held:[],orders:[],date:dkey(),unlocked:false};
+const S={view:"sell",cat:null,soMode:false,editMode:false,cart:newCart(),settings:null,menu:null,days:{},held:[],orders:[],date:dkey(),unlocked:false};
 const day=k=>(S.days[k]=S.days[k]||{float:0,moves:[],counted:null,closedAt:null});
 const save={
   cart:()=>DB.set("cart",S.cart).catch(()=>{}),
@@ -203,17 +225,22 @@ async function needPin(){
 }
 /* 通用表單：fields=[{k,label,type:text|number|select|checks|toggle,value,options:[[val,label]]}] */
 function form(title,fields,okLabel="儲存 Save",extraBtn){return new Promise(res=>{
+  const vals={};
+  form._onPhoto=async(k,file)=>{if(!file)return;try{vals[k]=await compressPhoto(file);const im=document.getElementById("f_"+k+"_prev");if(im){im.src=vals[k];im.style.display="";}}catch(e){toast("照片處理失敗："+(e&&e.message||e));}};
   const fh=f=>{const id="f_"+f.k;
     if(f.type==="select")return `<select id="${id}">${f.options.map(([v,l])=>`<option value="${esc(v)}"${String(v)===String(f.value)?" selected":""}>${esc(l)}</option>`).join("")}</select>`;
     if(f.type==="checks")return `<div class="chips" id="${id}">${f.options.map(([v,l])=>`<button type="button" class="chip${(f.value||[]).includes(v)?" on":""}" data-act="tg" data-v="${esc(v)}">${esc(l)}</button>`).join("")}</div>`;
+    if(f.type==="photo"){vals[f.k]=f.value||"";return `<div class="row" id="${id}"><img id="${id}_prev" class="thumb" style="width:84px;height:84px;${f.value?"":"display:none"}" src="${esc(f.value||"")}" alt=""/><label class="btn" style="padding:10px 14px;cursor:pointer">選擇照片／拍照 Photo<input type="file" accept="image/*" data-photo="${f.k}" style="display:none"/></label><button type="button" class="btn ghost" style="padding:10px 14px" data-act="phRm" data-k="${f.k}">移除照片</button></div>`;}
     if(f.type==="toggle")return `<div class="chips" id="${id}"><button type="button" class="chip${f.value?" on":""}" data-act="tg1" data-v="1">開 On</button><button type="button" class="chip${!f.value?" on":""}" data-act="tg1" data-v="0">關 Off</button></div>`;
     return `<input id="${id}" type="${f.type==="number"?"number":"text"}" ${f.type==="number"?'inputmode="decimal" step="any" min="0"':""} value="${esc(f.value??"")}" maxlength="${f.max||80}" placeholder="${esc(f.ph||"")}"/>`;};
   modal(`<h3>${esc(title)}</h3>${fields.map(f=>`<div class="f"><label for="f_${f.k}">${esc(f.label)}</label>${fh(f)}</div>`).join("")}<div class="foot"><button class="btn ghost" data-act="x">取消 Cancel</button>${extraBtn?`<button class="btn ghost" data-act="extra">${esc(extraBtn)}</button>`:""}<button class="btn pri" data-act="ok">${esc(okLabel)}</button></div>`,{
     tg(el){el.classList.toggle("on");},
+    phRm(el){vals[el.dataset.k]="";const im=document.getElementById("f_"+el.dataset.k+"_prev");if(im)im.style.display="none";},
     tg1(el){[...el.parentNode.children].forEach(c=>c.classList.toggle("on",c===el));},
     x(){closeModal();res(null);},extra(){closeModal();res({_extra:true});},
     ok(){const out={};fields.forEach(f=>{const el=document.getElementById("f_"+f.k);
-      if(f.type==="checks")out[f.k]=[...el.querySelectorAll(".chip.on")].map(c=>c.dataset.v);
+      if(f.type==="photo")out[f.k]=vals[f.k];
+      else if(f.type==="checks")out[f.k]=[...el.querySelectorAll(".chip.on")].map(c=>c.dataset.v);
       else if(f.type==="toggle")out[f.k]=el.querySelector(".chip.on").dataset.v==="1";
       else out[f.k]=el.value.trim();});closeModal();res(out);}
   });});}
@@ -231,15 +258,25 @@ function render(){
 function tick(){const c=$("#clock");if(c){const d=new Date();c.textContent=`${dkey(d)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;}}
 setInterval(tick,20000);
 
+const cartQty=id=>S.cart.lines.reduce((n,l)=>n+(l.itemId===id?l.qty:0),0);
 function vSell(){
-  const m=S.menu;if(!m.cats.find(c=>c.id===S.cat))S.cat=m.cats[0]?m.cats[0].id:null;
-  const items=m.items.filter(i=>i.catId===S.cat);
+  const m=S.menu,news=m.items.filter(isNewNow);
+  const tabs=[...(news.length?[{id:"__new",code:"⭐",name:"新品",nameEn:"New"}]:[]),...m.cats];
+  if(!tabs.find(c=>c.id===S.cat))S.cat=tabs[0]?tabs[0].id:null;
+  const items=S.cat==="__new"?news:m.items.filter(i=>i.catId===S.cat);
+  const modeTip=S.soMode?"售完設定中：點品項切換售完":S.editMode?"編輯模式：點品項可改名稱、價格、照片、新品":"";
   return `<div class="main"><div class="left">
-    <div class="cats">${m.cats.map(c=>`<button class="${c.id===S.cat?"on":""}" data-act="cat" data-v="${c.id}">${esc(c.code||"")} · ${esc(c.name)} <small>${esc(c.nameEn||"")}</small></button>`).join("")}
-      <button class="so ${S.soMode?"on":""}" data-act="soMode">${S.soMode?"點品項切換售完 · 完成 Done":"售完設定 Sold out"}</button></div>
-    <div class="grid">${items.map(i=>`<button class="item${i.soldOut?" sold":""}" data-act="add" data-v="${i.id}"><div><div class="code">${esc(i.code||"")}</div><div class="zh">${esc(i.name)}</div><div class="en">${esc(i.nameEn||"")}</div></div><div class="pr">${R(i.price)}</div></button>`).join("")||`<div class="empty">這個類別還沒有品項，請到「菜單」新增</div>`}</div>
+    <div class="catbar"><div class="cats">${tabs.map(c=>`<button class="${c.id===S.cat?"on":""}" data-act="cat" data-v="${c.id}">${esc(c.code||"")} · ${esc(c.name)} <small>${esc(c.nameEn||"")}</small></button>`).join("")}</div>
+      <div class="modes"><button class="so ${S.soMode?"on":""}" data-act="soMode">${S.soMode?"完成 Done":"售完 Sold out"}</button>
+      <button class="so ${S.editMode?"on":""}" data-act="editMode">${S.editMode?"完成 Done":"✎ 編輯 Edit"}</button></div></div>
+    ${modeTip?`<div style="padding:0 12px 4px;color:var(--amber);font-weight:700;font-size:14px">${modeTip}</div>`:""}
+    <div class="grid">${items.map(i=>{const q=cartQty(i.id),src=itemImg(i);return `<button class="item${i.soldOut?" sold":""}${q?" has":""}" data-act="add" data-v="${i.id}">
+        <span class="badge" data-q="${i.id}" ${q?"":"hidden"}>${q||""}</span>
+        <div>${src?`<img class="ph" src="${esc(src)}" alt="" loading="lazy"/>`:""}<div><span class="code">${esc(i.code||"")}</span>${isNewNow(i)?'<span class="new">NEW 新品</span>':""}</div><div class="zh">${esc(i.name)}</div><div class="en">${esc(i.nameEn||"")}</div></div><div class="pr">${R(i.price)}</div></button>`;}).join("")||(S.editMode?"":`<div class="empty">這個類別還沒有品項，請按右上「✎ 編輯」新增</div>`)}
+      ${S.editMode?`<button class="item addnew" data-act="itNew">＋ 新增品項<br/>Add item</button>`:""}</div>
   </div><div class="right" id="cartPane">${cartHtml()}</div></div>`;
 }
+function drawBadges(){document.querySelectorAll(".item .badge[data-q]").forEach(b=>{const q=cartQty(b.dataset.q);b.textContent=q||"";b.hidden=!q;b.parentNode.classList.toggle("has",!!q);});}
 function cartHtml(){
   const c=S.cart,t=calc(c),src=S.settings.sources;
   return `<div class="meta">
@@ -265,7 +302,7 @@ function cartHtml(){
     </div>
     <button class="btn pri pay" data-act="pay" ${c.lines.length?"":"disabled"}>結帳 Pay ${R(t.total)}</button>`;
 }
-function drawCart(){const p=$("#cartPane");if(p){const sc=p.querySelector(".lines");const y=sc?sc.scrollTop:0;p.innerHTML=cartHtml();const n=p.querySelector(".lines");if(n)n.scrollTop=y;}save.cart();}
+function drawCart(){const p=$("#cartPane");if(p){const sc=p.querySelector(".lines");const y=sc?sc.scrollTop:0;p.innerHTML=cartHtml();const n=p.querySelector(".lines");if(n)n.scrollTop=y;}drawBadges();save.cart();}
 
 /* ---------- 點餐動作 ---------- */
 const A={
@@ -273,10 +310,12 @@ const A={
     if(["report","menu","settings"].includes(v)&&!S.unlocked){if(!(await needPin()))return;S.unlocked=true;}
     if(v==="sell")S.unlocked=false;
     if(v==="orders"||v==="report"){S.date=S.date||dkey();S.orders=await DB.byDate(S.date);}
-    S.view=v;S.soMode=false;render();},
+    S.view=v;S.soMode=false;S.editMode=false;render();},
   cat(el){S.cat=el.dataset.v;render();},
-  soMode(){S.soMode=!S.soMode;render();},
+  soMode(){S.soMode=!S.soMode;S.editMode=false;render();},
+  async editMode(){if(!S.editMode&&!(await needPin()))return;S.editMode=!S.editMode;S.soMode=false;render();},
   add(el){const it=S.menu.items.find(i=>i.id===el.dataset.v);if(!it)return;
+    if(S.editMode){itemForm(it);return;}
     if(S.soMode){it.soldOut=!it.soldOut;save.menu();render();return;}
     if(it.soldOut){toast("已售完 Sold out");return;}
     const ex=S.cart.lines.find(l=>l.itemId===it.id&&!l.mods.length&&!l.note&&!(l.disc&&l.disc.val));
@@ -300,7 +339,8 @@ document.addEventListener("input",e=>{const id=e.target.id;
 document.addEventListener("change",async e=>{const id=e.target.id;
   if(id==="cSrc"){S.cart.source=e.target.value;save.cart();}
   else if(id==="dateSel"){S.date=e.target.value||dkey();S.orders=await DB.byDate(S.date);render();}
-  else if(id==="impFile"){importBackup(e.target.files[0]);}});
+  else if(id==="impFile"){importBackup(e.target.files[0]);}
+  else if(e.target.dataset&&e.target.dataset.photo){form._onPhoto&&form._onPhoto(e.target.dataset.photo,e.target.files[0]);}});
 
 function editLine(i){
   const l=S.cart.lines[i];if(!l)return;
@@ -481,18 +521,20 @@ function vMenu(){
   return `<h2>菜單管理 Menu</h2>
   <div class="row" style="margin-bottom:8px"><button class="btn pri" style="padding:10px 16px" data-act="itNew">＋ 新增品項 Item</button><button class="btn" style="padding:10px 16px" data-act="catNew">＋ 新增類別 Category</button><button class="btn" style="padding:10px 16px" data-act="modNew">＋ 新增客製選項 Option</button></div>
   ${m.cats.map((c,ci)=>`<h3><span class="cd">${esc(c.code||"")}</span>${esc(c.name)} ${esc(c.nameEn||"")} <button class="btn ghost" style="padding:4px 10px;min-height:36px;font-size:13px" data-act="catEdit" data-v="${c.id}">編輯</button> <button class="btn ghost" style="padding:4px 10px;min-height:36px;font-size:13px" data-act="catUp" data-v="${ci}" ${ci?"":"disabled"}>↑</button></h3>
-    <div class="cardb"><table>${m.items.filter(i=>i.catId===c.id).map(i=>`<tr><td><span class="cd">${esc(i.code||"")}</span>${esc(i.name)} <span style="color:#C9CED8;font-size:15px">${esc(i.nameEn||"")}</span>${i.soldOut?' <span class="tag">售完</span>':""}</td><td class="n">${R(i.price)}</td><td class="n" style="width:90px"><button class="btn ghost" style="padding:6px 12px;min-height:40px" data-act="itEdit" data-v="${i.id}">編輯</button></td></tr>`).join("")||'<tr><td style="color:var(--muted)">（沒有品項）</td></tr>'}</table></div>`).join("")}
+    <div class="cardb"><table>${m.items.filter(i=>i.catId===c.id).map(i=>`<tr><td>${itemImg(i)?`<img class="thumb" src="${esc(itemImg(i))}" alt="" loading="lazy"/>`:""}<span class="cd">${esc(i.code||"")}</span>${esc(i.name)}${isNewNow(i)?' <span class="tag" style="background:var(--amber);color:#111">NEW</span>':""} <span style="color:#C9CED8;font-size:15px">${esc(i.nameEn||"")}</span>${i.soldOut?' <span class="tag">售完</span>':""}</td><td class="n">${R(i.price)}</td><td class="n" style="width:90px"><button class="btn ghost" style="padding:6px 12px;min-height:40px" data-act="itEdit" data-v="${i.id}">編輯</button></td></tr>`).join("")||'<tr><td style="color:var(--muted)">（沒有品項）</td></tr>'}</table></div>`).join("")}
   <h3>客製選項 Options（加料、口味）</h3><div class="cardb"><table>${m.mods.map(o=>`<tr><td>${esc(o.name)} <span style="color:var(--muted);font-size:12px">${esc(o.nameEn||"")}</span></td><td>${o.catIds&&o.catIds.length?o.catIds.map(id=>esc((m.cats.find(c=>c.id===id)||{}).name||"")).join("、"):"全部類別"}</td><td class="n">${o.price?"+"+R(o.price):"免費"}</td><td class="n" style="width:90px"><button class="btn ghost" style="padding:6px 12px;min-height:40px" data-act="modEdit" data-v="${o.id}">編輯</button></td></tr>`).join("")||'<tr><td style="color:var(--muted)">（沒有選項）</td></tr>'}</table></div>`;
 }
 async function itemForm(it){
   const m=S.menu;if(!m.cats.length){toast("請先新增類別");return;}
-  const r=await form(it?"編輯品項":"新增品項",[{k:"code",label:"編號 No.（留空＝自動編號）",type:"text",value:it&&it.code,max:6},{k:"name",label:"中文名稱",type:"text",value:it&&it.name,max:40},{k:"nameEn",label:"英文名稱 English",type:"text",value:it&&it.nameEn,max:60},{k:"price",label:"價格 (R)",type:"number",value:it?it.price/100:""},{k:"catId",label:"類別",type:"select",value:it?it.catId:S.cat||m.cats[0].id,options:m.cats.map(c=>[c.id,c.name])},{k:"soldOut",label:"售完 Sold out",type:"toggle",value:it&&it.soldOut}],"儲存 Save",it?"刪除品項":null);
+  const r=await form(it?"編輯品項":"新增品項",[{k:"code",label:"編號 No.（留空＝自動編號）",type:"text",value:it&&it.code,max:6},{k:"name",label:"中文名稱",type:"text",value:it&&it.name,max:40},{k:"nameEn",label:"英文名稱 English",type:"text",value:it&&it.nameEn,max:60},{k:"price",label:"價格 (R)",type:"number",value:it?it.price/100:""},{k:"catId",label:"類別",type:"select",value:it?it.catId:(m.cats.find(c=>c.id===S.cat)?S.cat:m.cats[0].id),options:m.cats.map(c=>[c.id,c.name])},{k:"photo",label:"照片 Photo（會裁成正方形並壓縮）",type:"photo",value:it?itemImg(it):""},{k:"isNew",label:"新品 New（放進最前面的「⭐ 新品」分頁，"+NEW_DAYS+" 天後自動移除）",type:"toggle",value:it?isNewNow(it):S.cat==="__new"},{k:"soldOut",label:"售完 Sold out",type:"toggle",value:it&&it.soldOut}],"儲存 Save",it?"刪除品項":null);
   if(!r)return;
   if(r._extra){if(await confirmBox(`刪除「${it.name}」？舊訂單紀錄不受影響。`))m.items=m.items.filter(x=>x.id!==it.id);}
   else{const p=toCents(r.price);if(!r.name||!(p>=0)){toast("請填名稱與正確價格");return itemForm(it);}
     const code=(r.code||"").toUpperCase()||((it&&it.catId===r.catId&&it.code)||nextCode(r.catId));
     if(m.items.some(x=>x!==it&&x.code===code)){toast("編號 "+code+" 已被其他品項使用");return itemForm(it);}
-    if(it)Object.assign(it,{code,name:r.name,nameEn:r.nameEn,price:p,catId:r.catId,soldOut:r.soldOut});else m.items.push({id:uid(),code,name:r.name,nameEn:r.nameEn,price:p,catId:r.catId,soldOut:r.soldOut});}
+    const ph=r.photo===(it?itemImg(it):"")?{}:(r.photo?{photo:r.photo}:{photo:"",img:""});
+    const nw={isNew:r.isNew,newAt:r.isNew?((it&&isNewNow(it)&&it.newAt)||Date.now()):0};
+    if(it)Object.assign(it,{code,name:r.name,nameEn:r.nameEn,price:p,catId:r.catId,soldOut:r.soldOut},ph,nw);else m.items.push({id:uid(),code,name:r.name,nameEn:r.nameEn,price:p,catId:r.catId,soldOut:r.soldOut,...ph,...nw});}
   await save.menu();render();
 }
 async function catForm(c){
