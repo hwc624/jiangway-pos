@@ -52,6 +52,10 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
 .step button{flex:1;height:48px;border-radius:10px;font-size:26px;font-weight:800}
 .step .minus{background:var(--red);color:#fff}.step .plus{background:var(--green);color:#fff}
 .step b{min-width:40px;text-align:center;font-size:24px}
+.noteBtn{display:none;width:100%;margin-top:6px;min-height:44px;border-radius:10px;background:var(--card2);border:1px solid var(--line);font-weight:700;font-size:15px;padding:6px 8px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item.has .noteBtn{display:block}.noteBtn.set{background:var(--amber);color:#111;border-color:var(--amber)}
+.nb{flex-shrink:0;min-width:54px;min-height:46px;border-radius:8px;background:var(--card2);font-size:18px;padding:2px 6px}
+.nb small{display:block;font-size:12px;font-weight:600}.nb.set{background:var(--amber);color:#111}
 .step small{display:block;font-size:12px;font-weight:600;color:var(--amber);text-align:center}
 .item .new{display:inline-block;background:var(--amber);color:#111;font-weight:800;font-size:12px;border-radius:6px;padding:2px 6px;margin-left:4px;vertical-align:top}
 .item.addnew{align-items:center;justify-content:center;border:2px dashed var(--line);background:none;color:var(--muted);font-weight:700;text-align:center}
@@ -136,7 +140,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 <script>
 "use strict";
 /* ============ 江味齋 POS：單機、離線、資料存在本機 IndexedDB；列印走 RawBT（圖片） ============ */
-const APP_VER="1.4.0";
+const APP_VER="1.5.0";
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const pad2=n=>String(n).padStart(2,"0");
@@ -324,14 +328,19 @@ function vSell(){
     ${tip?`<div class="tip">${tip}</div>`:""}
     <div class="grid">${items.map(i=>{const q=cartQty(i.id),src=itemImg(i);return `<div class="item${i.soldOut?" sold":""}${q?" has":""}" role="button" tabindex="0" data-act="add" data-v="${i.id}" data-tile="${i.id}">
         <div>${src?`<img class="ph" src="${esc(src)}" alt="" loading="lazy"/>`:""}<div><span class="code">${esc(i.code||"")}</span>${isNewNow(i)?'<span class="new">NEW 新品</span>':""}</div><div class="zh">${esc(i.name)}</div><div class="en">${esc(i.nameEn||"")}</div></div>
-        <div><div class="pr">${R(i.price)}</div><div class="step"><button class="minus" data-act="tdec" data-v="${i.id}" aria-label="減少 ${esc(i.name)}">−</button><b data-q="${i.id}">${q}</b><button class="plus" data-act="add" data-v="${i.id}" aria-label="增加 ${esc(i.name)}">＋</button></div></div></div>`;}).join("")||(S.editMode?"":`<div class="empty">這個類別還沒有品項，請按右上角「✎ 編輯」新增</div>`)}
+        <div><div class="pr">${R(i.price)}</div><div class="step"><button class="minus" data-act="tdec" data-v="${i.id}" aria-label="減少 ${esc(i.name)}">−</button><b data-q="${i.id}">${q}</b><button class="plus" data-act="add" data-v="${i.id}" aria-label="增加 ${esc(i.name)}">＋</button></div><button class="noteBtn${noteText(i.id)?" set":""}" data-act="tnote" data-v="${i.id}" data-n="${i.id}">${noteLabel(i.id)}</button></div></div>`;}).join("")||(S.editMode?"":`<div class="empty">這個類別還沒有品項，請按右上角「✎ 編輯」新增</div>`)}
       ${S.editMode?`<button class="item addnew" data-act="itNew">＋ 新增品項<br/>Add item</button>`:""}</div>
     <div class="cartbar" id="cartBar">${cartBarHtml()}</div>
   </div><div class="right" id="cartPane">${cartHtml()}</div></div>`;
 }
+/* 品項格上的備註按鈕文字：有備註或客製就直接顯示內容 */
+function noteText(id){const out=[];S.cart.lines.forEach(l=>{if(l.itemId===id){l.mods.forEach(m=>out.push(m.name));if(l.note)out.push(l.note);}});return out.join("、");}
+const noteLabel=id=>{const t=noteText(id);return t?"📝 "+esc(t):"📝 備註／客製 Note";};
 function cartBarHtml(){const t=calc(S.cart),n=S.cart.lines.length;
-  return `<button class="btn" data-act="cartOpen">🧾 訂單 ${t.qty} 件<small>View order${S.held.length?" · 掛單 "+S.held.length:""}</small></button><button class="btn pri" data-act="pay" ${n?"":"disabled"}>結帳 Pay ${R(t.total)}</button>`;}
-function drawBadges(){document.querySelectorAll("[data-tile]").forEach(el=>{const q=cartQty(el.dataset.tile);el.classList.toggle("has",!!q);const b=el.querySelector("[data-q]");if(b)b.textContent=q;});
+  const hasNote=!!(S.cart.note||S.cart.customer);
+  return `<button class="btn" data-act="cartOpen">🧾 訂單 ${t.qty} 件<small>View order${S.held.length?" · 掛單 "+S.held.length:""}</small></button><button class="btn${hasNote?" warn":""}" data-act="orderNote" style="flex:.7">📝 整單備註<small${hasNote?' style="color:#111"':""}>${hasNote?esc((S.cart.customer+" "+S.cart.note).trim().slice(0,14)):"Order note"}</small></button><button class="btn pri" data-act="pay" ${n?"":"disabled"}>結帳 Pay ${R(t.total)}</button>`;}
+function drawBadges(){document.querySelectorAll("[data-tile]").forEach(el=>{const q=cartQty(el.dataset.tile);el.classList.toggle("has",!!q);const b=el.querySelector("[data-q]");if(b)b.textContent=q;
+    const nb=el.querySelector("[data-n]");if(nb){nb.innerHTML=noteLabel(el.dataset.tile);nb.classList.toggle("set",!!noteText(el.dataset.tile));}});
   const bar=$("#cartBar");if(bar)bar.innerHTML=cartBarHtml();}
 function cartHtml(){
   const c=S.cart,t=calc(c),src=S.settings.sources;
@@ -339,14 +348,15 @@ function cartHtml(){
       <div class="seg">${TYPES.map(([z,e])=>`<button class="${c.type===z?"on":""}" data-act="type" data-v="${z}">${z} ${e}</button>`).join("")}</div>
       <select id="cSrc" aria-label="訂單來源 Source">${src.map(s=>`<option${s===(c.source||src[0])?" selected":""}>${esc(s)}</option>`).join("")}</select>
       <input id="cName" placeholder="稱呼／桌號 Name" maxlength="30" value="${esc(c.customer)}" aria-label="稱呼或桌號"/>
-      <input id="cNote" placeholder="整單備註 Order note" maxlength="80" value="${esc(c.note)}" style="grid-column:1/3" aria-label="整單備註"/>
+      <input id="cNote" placeholder="📝 整單備註 Order note（例：11:30 取、不要袋子）" maxlength="80" value="${esc(c.note)}" style="grid-column:1/3" aria-label="整單備註"/>
     </div>
     <div class="lines">${c.lines.length?c.lines.map((l,i)=>{const x=lineCalc(l);return `<div class="ln">
         <button class="qb" data-act="dec" data-i="${i}" aria-label="減少">−</button><span class="q">${l.qty}</span><button class="qb" data-act="inc" data-i="${i}" aria-label="增加">＋</button>
         <button class="info" data-act="edit" data-i="${i}"><div class="nm"><span class="cd">${esc(l.code||"")}</span>${esc(l.name)}</div><div class="sub">${esc(l.nameEn||"")}</div>
           ${l.mods.length?`<div class="sub m">＋ ${l.mods.map(m=>esc(m.name)+(m.price?" "+R(m.price):"")).join("、")}</div>`:""}
           ${l.note?`<div class="sub m">※ ${esc(l.note)}</div>`:""}${x.disc?`<div class="sub m">折扣 ${discLabel(l.disc)} −${R(x.disc)}</div>`:""}</button>
-        <span class="amt">${R(x.net)}</span></div>`;}).join(""):`<div class="empty">點左邊品項加入訂單<br/>Tap an item to start<br/><br/>點訂單裡的品名可加客製、備註、折扣</div>`}</div>
+        <button class="nb${l.note||l.mods.length?" set":""}" data-act="edit" data-i="${i}" aria-label="備註與客製">📝<small>備註</small></button>
+        <span class="amt">${R(x.net)}</span></div>`;}).join(""):`<div class="empty">點左邊品項加入訂單<br/>Tap an item to start<br/><br/>每個品項旁的「📝 備註」可寫備註、選客製、打折</div>`}</div>
     <div class="tot"><div><span>小計 Subtotal（${t.qty} 件）</span><span>${R(t.gross)}</span></div>
       ${t.disc?`<div><span>折扣 Discount${c.disc&&c.disc.val?"（整單 "+discLabel(c.disc)+"）":""}</span><span>−${R(t.disc)}</span></div>`:""}
       <div class="big"><span>合計 Total</span><span>${R(t.total)}</span></div></div>
@@ -378,6 +388,9 @@ const A={
     if(ex)ex.qty++;else S.cart.lines.push({itemId:it.id,code:it.code||"",catId:it.catId,name:it.name,nameEn:it.nameEn||"",price:it.price,qty:1,mods:[],note:"",disc:null});
     drawCart();const sc=$("#cartPane .lines");if(sc&&!ex)sc.scrollTop=sc.scrollHeight;},
   tdec(el){const id=el.dataset.v,ls=S.cart.lines;for(let i=ls.length-1;i>=0;i--)if(ls[i].itemId===id){if(ls[i].qty>1)ls[i].qty--;else ls.splice(i,1);break;}drawCart();},
+  tnote(el){const id=el.dataset.v,ls=S.cart.lines;for(let i=ls.length-1;i>=0;i--)if(ls[i].itemId===id){editLine(i);return;}},
+  async orderNote(){const r=await form("整單備註 Order note",[{k:"customer",label:"稱呼／桌號 Name",type:"text",value:S.cart.customer,max:30},{k:"note",label:"整單備註（會印在廚房單和收據上）",type:"text",value:S.cart.note,max:80,ph:"例：11:30 取、不要袋子"}],"完成 Done");
+    if(!r)return;S.cart.customer=r.customer;S.cart.note=r.note;if(S.view==="sell")render();save.cart();},
   cartOpen(){S.cartOpen=true;const m=$("#sellMain");if(m)m.classList.add("open");},
   cartClose(){S.cartOpen=false;const m=$("#sellMain");if(m)m.classList.remove("open");},
   inc(el){S.cart.lines[+el.dataset.i].qty++;drawCart();},
@@ -408,7 +421,7 @@ function editLine(i){
   const draw=()=>modal(`<h3>${esc(nm(l))} <small style="color:var(--muted);font-weight:500;font-size:16px">${esc(l.nameEn)}</small></h3>
     <div class="f"><label>數量 Qty</label><div class="row"><button class="qb" data-act="q-">−</button><b style="font-size:22px;min-width:40px;text-align:center">${qty}</b><button class="qb" data-act="q+">＋</button></div></div>
     <div class="f"><label>客製 Options</label><div class="chips">${mods.map(m=>`<button class="chip${sel.includes(m.id)?" on":""}" data-act="m" data-v="${m.id}">${esc(m.name)} ${esc(m.nameEn||"")}${m.price?" +"+R(m.price):""}</button>`).join("")||`<span style="color:var(--muted);font-size:13px">尚未設定客製選項（到「菜單 → 客製選項」新增）</span>`}</div></div>
-    <div class="f"><label for="lnNote">單品備註 Item note</label><input id="lnNote" maxlength="60" value="${esc(note)}" placeholder="例：醬另外放 Sauce on the side"/></div>
+    <div class="f"><label for="lnNote">📝 單品備註 Item note（會印在廚房單上）</label><input id="lnNote" maxlength="60" value="${esc(note)}" placeholder="例：醬另外放 Sauce on the side"/></div>
     <div class="f"><label>單品折扣 Item discount</label><div class="row"><b>${disc&&disc.val?discLabel(disc):"無 None"}</b><button class="btn ghost" data-act="d" style="padding:8px 14px">設定 Set</button></div></div>
     <div class="foot"><button class="btn ghost" data-act="del">刪除 Remove</button><button class="btn pri" data-act="ok">完成 Done</button></div>`,{
     "q-"(){note=$("#lnNote").value;if(qty>1)qty--;draw();},"q+"(){note=$("#lnNote").value;qty++;draw();},
