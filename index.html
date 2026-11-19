@@ -140,7 +140,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 <script>
 "use strict";
 /* ============ 江味齋 POS：單機、離線、資料存在本機 IndexedDB；列印走 RawBT（圖片） ============ */
-const APP_VER="1.6.0";
+const APP_VER="1.7.0";
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const pad2=n=>String(n).padStart(2,"0");
@@ -245,7 +245,7 @@ async function syncFromApp(quiet){
 const newCart=()=>({lines:[],type:"外帶",source:"",customer:"",note:"",disc:null,addTo:null});
 
 /* ---------- 狀態 ---------- */
-const S={view:"sell",cat:null,soMode:false,editMode:false,cartOpen:false,cart:newCart(),settings:null,menu:null,days:{},held:[],orders:[],open:[],date:dkey(),unlocked:false};
+const S={view:"sell",cat:null,soMode:false,editMode:false,cartOpen:false,cart:newCart(),settings:null,menu:null,days:{},held:[],orders:[],open:[],date:dkey(),unlocked:false,rtab:"day",month:dkey().slice(0,7),months:{},mRep:null,prevHasOrders:false};
 async function refreshOpen(){S.open=(await DB.all()).filter(o=>o.status==="open").sort((a,b)=>a.ts-b.ts);}
 const day=k=>(S.days[k]=S.days[k]||{float:0,moves:[],counted:null,closedAt:null});
 const save={
@@ -254,6 +254,7 @@ const save={
   settings:()=>DB.set("settings",S.settings),
   days:()=>DB.set("days",S.days),
   held:()=>DB.set("held",S.held),
+  months:()=>DB.set("months",S.months),
 };
 
 /* ---------- 金額計算（單位：分；折扣四捨五入到整 Rand，避免找零出現小數）---------- */
@@ -383,7 +384,8 @@ const A={
   async nav(el){const v=el.dataset.v;
     if(["report","menu","settings"].includes(v)&&!S.unlocked){if(!(await needPin()))return;S.unlocked=true;}
     if(v==="sell")S.unlocked=false;
-    if(v==="orders"||v==="report"){S.date=S.date||dkey();S.orders=await DB.byDate(S.date);}
+    if(v==="orders"){S.date=S.date||dkey();S.orders=await DB.byDate(S.date);}
+    if(v==="report")await loadReport();
     S.view=v;S.soMode=false;S.editMode=false;S.cartOpen=false;render();},
   cat(el){S.cat=el.dataset.v;render();},
   soMode(){S.soMode=!S.soMode;S.editMode=false;render();},
@@ -429,7 +431,8 @@ document.addEventListener("input",e=>{const id=e.target.id;
   else if(id==="cSrc"){S.cart.source=e.target.value;save.cart();}});
 document.addEventListener("change",async e=>{const id=e.target.id;
   if(id==="cSrc"){S.cart.source=e.target.value;save.cart();}
-  else if(id==="dateSel"){S.date=e.target.value||dkey();S.orders=await DB.byDate(S.date);render();}
+  else if(id==="dateSel"){S.date=e.target.value||dkey();if(S.view==="report")await loadReport();else S.orders=await DB.byDate(S.date);render();}
+  else if(id==="monthSel"){S.month=e.target.value||ymOf(dkey());await loadReport();render();}
   else if(id==="impFile"){importBackup(e.target.files[0]);}
   else if(e.target.dataset&&e.target.dataset.photo){form._onPhoto&&form._onPhoto(e.target.dataset.photo,e.target.files[0]);}});
 
@@ -590,7 +593,7 @@ function vOrders(){
       ${o.status!=="void"?`<button class="btn ghost" style="padding:8px 14px;color:var(--red);margin-left:auto" data-act="void" data-v="${o.id}">作廢／退款 Void</button>`:""}</div></div>`).join(""):`<div class="empty">這一天沒有訂單 No orders</div>`}`;
 }
 Object.assign(A,{
-  async today(){S.date=dkey();S.orders=await DB.byDate(S.date);render();},
+  async today(){S.date=dkey();if(S.view==="report")await loadReport();else S.orders=await DB.byDate(S.date);render();},
   rp(el){const o=S.orders.find(x=>x.id===el.dataset.v);if(o)printOrder(o,el.dataset.m,0);},
   addon(el){const o=S.orders.find(x=>x.id===el.dataset.v);if(o)startAddon(o);},
   settle(el){const o=S.orders.find(x=>x.id===el.dataset.v);if(o)settle(o);},
@@ -611,10 +614,11 @@ function report(orders,dk){
   r.expected=r.float+r.cashSales+r.cashIn-r.cashOut;r.counted=d.counted;r.diff=d.counted==null?null:d.counted-r.expected;r.moves=d.moves;r.closedAt=d.closedAt;
   return r;
 }
-function vReport(){
+function vReport(){return `<div class="tabs2"><button class="${S.rtab!=="month"?"on":""}" data-act="rtab" data-v="day">日報 Daily</button><button class="${S.rtab==="month"?"on":""}" data-act="rtab" data-v="month">月報 Monthly</button></div>`+(S.rtab==="month"?vMonth():vDay());}
+function vDay(){
   const r=report(S.orders,S.date),items=Object.entries(r.items).sort((a,b)=>b[1].qty-a[1].qty);
   const tbl=(m,lab)=>Object.entries(m).map(([k,v])=>`<tr><td>${esc(lab?lab(k):k)}</td><td class="n">${v.n}</td><td class="n">${R(v.amt)}</td></tr>`).join("");
-  return `<h2>日結報表 Daily report</h2>${dateBar()}
+  return `<h2>日結報表 Daily report</h2>${dateBar()}${monthBanner()}
   <div class="kpis"><div class="kpi"><span>營業額 Net sales</span><b>${R(r.net)}</b></div><div class="kpi"><span>訂單數 Orders</span><b>${r.count}</b></div><div class="kpi"><span>平均客單 Avg</span><b>${R(r.count?Math.round(r.net/r.count):0)}</b></div><div class="kpi"><span>折扣 Discounts</span><b>${R(r.disc)}</b></div><div class="kpi"><span>作廢 Voids</span><b>${r.voidCount} 筆 ${R(r.voidTotal)}</b></div><div class="kpi"${r.openCount?' style="outline:2px solid var(--amber)"':""}><span>未結帳 Unpaid（未計入營業額）</span><b>${r.openCount} 筆 ${R(r.openTotal)}</b></div></div>
   <h3>付款方式 By payment</h3><div class="cardb"><table><tr><th>方式</th><th class="n">金額</th></tr>${METHODS.map(([k])=>`<tr><td>${mName(k)}</td><td class="n">${R(r.methods[k]||0)}</td></tr>`).join("")}<tr><td><b>合計</b></td><td class="n"><b>${R(r.net)}</b></td></tr></table></div>
   <h3>現金對帳 Cash reconciliation</h3><div class="cardb"><table>
@@ -647,6 +651,239 @@ function exportCsv(orders,name){
   [...orders].sort((a,b)=>a.ts-b.ts).forEach(o=>rows.push([o.dateKey,o.no,tstr(o.ts),o.type,o.source,o.customer,o.lines.map(l=>nm(l)+(l.mods.length?"("+l.mods.map(m=>m.name).join("/")+")":"")+" x"+l.qty).join("; "),o.gross/100,o.discTotal/100,o.total/100,o.payments.map(p=>p.method+":"+p.amount/100).join("; "),o.status,o.void?o.void.reason:"",o.note]));
   download(name,"﻿"+rows.map(r=>r.map(q).join(",")).join("\r\n"),"text/csv;charset=utf-8");toast("已匯出 "+name);
 }
+
+/* ---------- 月報表：每天的訂單照常記錄，月底按「月結」封存當月數字並匯出／列印；下個月自動從零開始統計 ---------- */
+const WD=["日","一","二","三","四","五","六"],WDE=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"],WD_ORDER=[1,2,3,4,5,6,0];
+const ymOf=dk=>String(dk).slice(0,7);
+const prevYm=ym=>{const [y,m]=ym.split("-").map(Number);const d=new Date(y,m-2,1);return `${d.getFullYear()}-${pad2(d.getMonth()+1)}`;};
+const ymLabel=ym=>{const [y,m]=ym.split("-");return `${y} 年 ${+m} 月`;};
+const daysIn=ym=>{const [y,m]=ym.split("-").map(Number);return new Date(y,m,0).getDate();};
+const pct=(a,b)=>b?Math.round(a/b*1000)/10:0;
+const rnd100=c=>Math.round(c/100)*100;
+const isDrink=l=>{const c=S.menu.cats.find(x=>x.id===l.catId);return !!c&&/飲|drink/i.test(c.name+" "+(c.nameEn||""));};
+async function loadReport(){
+  const all=await DB.all();
+  S.orders=all.filter(o=>o.dateKey===S.date);
+  const pv=prevYm(ymOf(dkey()));S.prevHasOrders=all.some(o=>ymOf(o.dateKey)===pv);
+  if(S.rtab==="month"){const ym=S.month,pm=prevYm(ym);
+    S.mRep=monthReport(all.filter(o=>ymOf(o.dateKey)===ym),ym,all.filter(o=>ymOf(o.dateKey)===pm));}
+}
+function monthReport(orders,ym,prevOrders){
+  const sum=(a,f)=>a.reduce((s,x)=>s+f(x),0);
+  const ok=orders.filter(o=>o.status==="paid"),vd=orders.filter(o=>o.status==="void"),op=orders.filter(o=>o.status==="open");
+  const r={ym,orders:ok,count:ok.length,net:sum(ok,o=>o.total),gross:sum(ok,o=>o.gross),disc:sum(ok,o=>o.discTotal),
+    voidCount:vd.length,voidTotal:sum(vd,o=>o.total),openCount:op.length,openTotal:sum(op,o=>o.total)};
+  r.avg=r.count?rnd100(r.net/r.count):0;r.qty=sum(ok,o=>o.lines.reduce((s,l)=>s+l.qty,0));r.ipo=r.count?r.qty/r.count:0;
+  // 每天
+  const today=dkey(),[yy,mm]=ym.split("-").map(Number);r.days=[];
+  for(let d=1;d<=daysIn(ym);d++){const k=`${ym}-${pad2(d)}`;if(k>today)break;const os=ok.filter(o=>o.dateKey===k);
+    r.days.push({k,d,wd:new Date(yy,mm-1,d).getDay(),n:os.length,amt:sum(os,o=>o.total)});}
+  const open=r.days.filter(d=>d.n);r.openDays=open.length;r.perDay=r.openDays?rnd100(r.net/r.openDays):0;
+  r.best=open.reduce((b,d)=>!b||d.amt>b.amt?d:b,null);r.worst=open.reduce((b,d)=>!b||d.amt<b.amt?d:b,null);
+  // 星期、時段
+  r.wd=WD.map((_,i)=>{const ds=open.filter(d=>d.wd===i),amt=sum(ds,d=>d.amt),n=sum(ds,d=>d.n);return {i,days:ds.length,amt,n,avgDay:ds.length?rnd100(amt/ds.length):0,avgN:ds.length?n/ds.length:0};});
+  r.heat=WD.map(()=>Array(24).fill(0));r.hours=Array.from({length:24},(_,i)=>({i,n:0,amt:0}));
+  ok.forEach(o=>{const d=new Date(o.ts);r.heat[d.getDay()][d.getHours()]++;r.hours[d.getHours()].n++;r.hours[d.getHours()].amt+=o.total;});
+  const hs=r.hours.filter(h=>h.n);r.hMin=hs.length?hs[0].i:10;r.hMax=hs.length?hs[hs.length-1].i:19;
+  r.peak=hs.reduce((b,h)=>!b||h.n>b.n?h:b,null);
+  // 商品、客製、組合
+  const items={},cats={},mods={},pairs={};let lines=0,noted=0,mainOrders=0,mainWithDrink=0,addonOrders=0,addonAmt=0;
+  ok.forEach(o=>{const seen=new Set();let hasDrink=false,hasMain=false;
+    o.lines.forEach(l=>{const x=lineCalc(l),k=l.itemId||nm(l);
+      const it=items[k]=items[k]||{k,code:l.code||"",name:l.name,en:l.nameEn||"",catId:l.catId,qty:0,amt:0,orders:0};
+      it.qty+=l.qty;it.amt+=x.net;if(!seen.has(k)){it.orders++;seen.add(k);}
+      const c=cats[l.catId]=cats[l.catId]||{qty:0,amt:0};c.qty+=l.qty;c.amt+=x.net;
+      l.mods.forEach(m=>{const t=mods[m.name]=mods[m.name]||{n:0,amt:0};t.n+=l.qty;t.amt+=(m.price||0)*l.qty;});
+      lines++;if(l.note||l.mods.length)noted++;
+      if(isDrink(l))hasDrink=true;else hasMain=true;
+      if((l.r||0)>0)addonAmt+=x.net;});
+    if(hasMain){mainOrders++;if(hasDrink)mainWithDrink++;}
+    if((o.rounds||1)>1)addonOrders++;
+    const ks=[...seen].sort();for(let i=0;i<ks.length;i++)for(let j=i+1;j<ks.length;j++){const p=ks[i]+"|"+ks[j];pairs[p]=(pairs[p]||0)+1;}});
+  r.items=Object.values(items).sort((a,b)=>b.amt-a.amt||b.qty-a.qty);
+  let cum=0;r.items.forEach(it=>{const before=cum;cum+=it.amt;it.share=pct(it.amt,r.net);it.abc=before<r.net*0.8?"A":before<r.net*0.95?"B":"C";it.rate=pct(it.orders,r.count);});
+  r.byQty=[...r.items].sort((a,b)=>b.qty-a.qty);
+  r.cats=Object.entries(cats).map(([id,v])=>{const c=S.menu.cats.find(x=>x.id===id);return {id,name:c?c.name:"（已刪除類別）",en:c?c.nameEn||"":"",...v,share:pct(v.amt,r.net)};}).sort((a,b)=>b.amt-a.amt);
+  r.unsold=S.menu.items.filter(i=>!items[i.id]);
+  const m0=new Date(yy,mm-1,1).getTime(),m1=new Date(yy,mm,1).getTime();
+  r.newItems=S.menu.items.filter(i=>i.isNew&&i.newAt>=m0-30*864e5&&i.newAt<m1).map(i=>({code:i.code,name:i.name,newAt:i.newAt,qty:items[i.id]?items[i.id].qty:0,amt:items[i.id]?items[i.id].amt:0}));
+  r.mods=Object.entries(mods).map(([k,v])=>({k,...v})).sort((a,b)=>b.n-a.n);
+  r.pairs=Object.entries(pairs).map(([k,n])=>{const [a,b]=k.split("|");return {a:items[a],b:items[b],n};}).filter(p=>p.n>=2).sort((x,y)=>y.n-x.n).slice(0,8);
+  r.lines=lines;r.noted=noted;r.mainOrders=mainOrders;r.drinkAttach=pct(mainWithDrink,mainOrders);r.addonOrders=addonOrders;r.addonAmt=addonAmt;
+  // 客人消費
+  const BANDS=[[0,50,"R50 以下"],[50,100,"R50–99"],[100,150,"R100–149"],[150,200,"R150–199"],[200,300,"R200–299"],[300,1e9,"R300 以上"]];
+  r.bands=BANDS.map(([lo,hi,label])=>({label,n:ok.filter(o=>o.total>=lo*100&&o.total<hi*100).length}));
+  r.sizes=[1,2,3,4].map(n=>({label:n===4?"4 件以上":n+" 件",n:ok.filter(o=>{const q=o.lines.reduce((s,l)=>s+l.qty,0);return n===4?q>=4:q===n;}).length}));
+  const grp=f=>{const m={};ok.forEach(o=>{const k=f(o)||"—";const g=m[k]=m[k]||{k,n:0,amt:0};g.n++;g.amt+=o.total;});return Object.values(m).map(g=>({...g,avg:rnd100(g.amt/g.n),share:pct(g.amt,r.net)})).sort((a,b)=>b.amt-a.amt);};
+  r.sources=grp(o=>o.source);r.types=grp(o=>o.type);
+  r.methods={};ok.forEach(o=>o.payments.forEach(p=>{r.methods[p.method]=(r.methods[p.method]||0)+p.amount;}));
+  const cus={};ok.filter(o=>(o.customer||"").trim()).forEach(o=>{const key=o.customer.trim().toLowerCase();const c=cus[key]=cus[key]||{name:o.customer.trim(),n:0,amt:0,last:0,fav:{}};
+    c.n++;c.amt+=o.total;c.last=Math.max(c.last,o.ts);o.lines.forEach(l=>{c.fav[l.name]=(c.fav[l.name]||0)+l.qty;});});
+  r.named=Object.values(cus).map(c=>({...c,avg:rnd100(c.amt/c.n),fav:Object.entries(c.fav).sort((a,b)=>b[1]-a[1])[0][0]})).sort((a,b)=>b.amt-a.amt||b.n-a.n);
+  r.namedOrders=ok.filter(o=>(o.customer||"").trim()).length;r.repeat=r.named.filter(c=>c.n>=2);
+  // 上個月
+  if(prevOrders){const pk=prevOrders.filter(o=>o.status==="paid");const pn=sum(pk,o=>o.total);const pdays=new Set(pk.map(o=>o.dateKey)).size;
+    r.prev={ym:prevYm(ym),count:pk.length,net:pn,avg:pk.length?rnd100(pn/pk.length):0,perDay:pdays?rnd100(pn/pdays):0,openDays:pdays};}
+  r.inProgress=ym===ymOf(dkey());
+  if(r.inProgress){const elapsed=r.days.length,openRate=elapsed?r.openDays/elapsed:0;r.estDays=Math.round(openRate*daysIn(ym));}
+  r.insights=insights(r);
+  return r;
+}
+function insights(r){
+  const out=[],P=(kind,t)=>out.push({kind,t}),nmx=it=>`${it.code?it.code+" ":""}${it.name}`;
+  if(!r.count)return out;
+  if(r.openCount)P("warn",`還有 ${r.openCount} 筆未結帳（${R(r.openTotal)}），沒有算進營業額；月結前請先結清或作廢。`);
+  if(r.prev&&r.prev.count){const c=pct(r.net-r.prev.net,r.prev.net),a=pct(r.avg-r.prev.avg,r.prev.avg),d=pct(r.perDay-r.prev.perDay,r.prev.perDay),sg=x=>(x>=0?"+":"")+x+"%";
+    if(r.inProgress)P(d>=0?"good":"warn",`本月到今天 ${r.openDays} 個營業日，每營業日平均 ${R(r.perDay)}，上個月是 ${R(r.prev.perDay)}（${sg(d)}）；客單價 ${R(r.prev.avg)} → ${R(r.avg)}（${sg(a)}）。照目前速度，本月約 ${R(rnd100(r.perDay*r.estDays))}（上個月全月 ${R(r.prev.net)}）。`);
+    else P(c>=0?"good":"warn",`營業額比上個月${c>=0?"增加":"減少"} ${Math.abs(c)}%（${R(r.prev.net)} → ${R(r.net)}）；每營業日平均 ${R(r.prev.perDay)} → ${R(r.perDay)}（${sg(d)}），客單價 ${R(r.prev.avg)} → ${R(r.avg)}（${sg(a)}）。`);}
+  const top=r.items[0];if(top)P("info",`營業額第一名是 ${nmx(top)}：${top.qty} 份、${R(top.amt)}，占營業額 ${top.share}%；${top.rate}% 的訂單有點它。`);
+  const A=r.items.filter(i=>i.abc==="A");if(r.items.length>=4)P("info",`${A.length} 個品項（共 ${r.items.length} 個有賣出）就貢獻了約 80% 營業額：${A.slice(0,6).map(nmx).join("、")}${A.length>6?"…":""}。這些品項要確保不缺料、照片放最前面。`);
+  if(r.unsold.length)P("warn",`有 ${r.unsold.length} 個菜單品項整個月沒賣出：${r.unsold.slice(0,8).map(nmx).join("、")}${r.unsold.length>8?"…":""}。可以考慮換照片、做搭配促銷，或下架減少備料。`);
+  const slow=r.items.filter(i=>i.qty<=Math.max(2,r.openDays/10)&&!r.unsold.includes(i));if(slow.length&&r.openDays>=10)P("info",`賣得很少（平均每 10 個營業日不到 1 份）：${slow.slice(0,6).map(nmx).join("、")}。`);
+  if(r.mainOrders>=10){if(r.drinkAttach<40)P("warn",`點主餐的訂單只有 ${r.drinkAttach}% 有加飲料。結帳時順口問「要不要加飲料？」或做「主餐＋飲料」套餐價，通常是最容易提高客單價的方法。`);
+    else P("good",`點主餐的訂單有 ${r.drinkAttach}% 有加飲料，搭購率不錯。`);}
+  const pr=r.pairs[0];if(pr&&pr.n>=3)P("info",`最常一起點的是 ${nmx(pr.a)} ＋ ${nmx(pr.b)}（${pr.n} 張訂單）。可以把它做成固定套餐，或在點其中一個時推另一個。`);
+  const w=r.wd.filter(x=>x.days);if(w.length>=2){const best=w.reduce((a,b)=>b.avgDay>a.avgDay?b:a),worst=w.reduce((a,b)=>b.avgDay<a.avgDay?b:a);
+    if(best!==worst)P("info",`週${WD[best.i]}平均每天 ${R(best.avgDay)} 最好；週${WD[worst.i]}平均只有 ${R(worst.avgDay)}（少 ${pct(best.avgDay-worst.avgDay,best.avgDay)}%），適合安排淡日優惠或在 WhatsApp 群組推當天限定。`);}
+  if(r.peak)P("info",`${pad2(r.peak.i)}:00–${pad2(r.peak.i+1)}:00 最忙，占全月訂單 ${pct(r.peak.n,r.count)}%。這段時間前要把料備好、人手排滿。`);
+  if(r.sources.length>=2){const hi=r.sources.reduce((a,b)=>b.avg>a.avg?b:a);P("info",`各來源中「${hi.k}」客單價最高（平均 ${R(hi.avg)}，全店平均 ${R(r.avg)}）。`);}
+  if(r.mods.length)P("info",`最常被要求的客製是「${r.mods[0].k}」（${r.mods[0].n} 次）${r.mods[1]?`、其次「${r.mods[1].k}」（${r.mods[1].n} 次）`:""}。如果某個要求很常見，可以考慮變成菜單上的固定選項或預設做法。`);
+  if(r.addonOrders)P("info",`${r.addonOrders} 張訂單有加點（占 ${pct(r.addonOrders,r.count)}%），加點金額共 ${R(r.addonAmt)}。`);
+  const dr=pct(r.disc,r.gross);if(dr>=5)P("warn",`折扣占原價 ${dr}%（共 ${R(r.disc)}），偏高，建議檢查是誰、在什麼情況下打折。`);
+  const vr=pct(r.voidCount,r.count+r.voidCount);if(r.voidCount&&vr>=3)P("warn",`作廢 ${r.voidCount} 筆（${vr}%，${R(r.voidTotal)}），偏高。可到「訂單」看作廢原因是否集中在某一種。`);
+  const nr=pct(r.namedOrders,r.count);
+  if(nr<30)P("warn",`只有 ${nr}% 的訂單有填「稱呼」，熟客分析不準。想知道熟客回訪次數與喜好，結帳時請固定填同一個稱呼（例如名字＋手機末 4 碼）。`);
+  else if(r.repeat.length)P("good",`有 ${r.repeat.length} 位熟客本月來了 2 次以上，貢獻 ${R(r.repeat.reduce((s,c)=>s+c.amt,0))}（占 ${pct(r.repeat.reduce((s,c)=>s+c.amt,0),r.net)}%）。`);
+  return out;
+}
+const bar=(v,max,cls)=>`<div class="bar ${cls||""}"><i style="width:${max?Math.max(2,Math.round(v/max*100)):0}%"></i></div>`;
+const delta=(a,b)=>{if(b==null||!b)return "";const c=pct(a-b,b);return `<span class="delta ${c>=0?"up":"dn"}">${c>=0?"▲":"▼"}${Math.abs(c)}%</span>`;};
+function monthBody(r){
+  if(!r.count&&!r.voidCount&&!r.openCount)return `<div class="empty">${ymLabel(r.ym)}沒有任何訂單</div>`;
+  const p=r.prev&&r.prev.count?r.prev:null,mx=a=>Math.max(1,...a);
+  const nmx=it=>`${it.code?`<span class="cd">${esc(it.code)}</span>`:""}${esc(it.name)}`;
+  const daysMax=mx(r.days.map(d=>d.amt)),wdMax=mx(r.wd.map(w=>w.avgDay)),heatMax=mx(r.heat.flat());
+  const hrs=[];for(let h=r.hMin;h<=r.hMax;h++)hrs.push(h);
+  return `<div class="kpis">
+    <div class="kpi"><span>營業額 Net sales${r.inProgress?"（到今天）":""}</span><b>${R(r.net)}</b>${p&&!r.inProgress?delta(r.net,p.net):""}</div>
+    <div class="kpi"><span>訂單數 Orders</span><b>${r.count}</b>${p&&!r.inProgress?delta(r.count,p.count):""}</div>
+    <div class="kpi"><span>客單價 Avg ticket</span><b>${R(r.avg)}</b>${p?delta(r.avg,p.avg):""}</div>
+    <div class="kpi"><span>營業天數 Days open</span><b>${r.openDays} 天</b></div>
+    <div class="kpi"><span>每營業日平均 Per day</span><b>${R(r.perDay)}</b>${p?delta(r.perDay,p.perDay):""}</div>
+    <div class="kpi"><span>每單件數 Items/order</span><b>${r.ipo.toFixed(1)}</b></div>
+    <div class="kpi"><span>最好的一天 Best day</span><b>${r.best?`${+r.best.k.slice(8)} 日 週${WD[r.best.wd]}`:"—"}</b>${r.best?`<span style="display:block;font-size:13px">${R(r.best.amt)}</span>`:""}</div>
+    <div class="kpi"><span>折扣 Discounts</span><b>${R(r.disc)}</b></div>
+  </div>
+  ${p?`<div style="color:var(--muted);font-size:13px;margin-top:6px">${r.inProgress?"本月還沒結束，營業額與訂單數不和上個月全月比較。":""}▲▼ 為與上個月（${ymLabel(p.ym)}：${R(p.net)}、${p.count} 筆、${p.openDays} 個營業日）比較</div>`:""}
+  ${r.insights.length?`<h3>重點發現與建議 Key findings</h3><ul class="ins">${r.insights.map(i=>`<li class="${i.kind}">${esc(i.t)}</li>`).join("")}</ul>`:""}
+  <h3>商品銷售排行 Product ranking（依營業額）</h3><div class="cardb sx"><table><tr><th>#</th><th>品項</th><th class="n">數量</th><th class="n">營業額</th><th style="width:22%">占比</th><th class="n">點購率</th><th>等級</th></tr>
+    ${r.items.map((it,i)=>`<tr><td>${i+1}</td><td>${nmx(it)} <span class="en2">${esc(it.en)}</span></td><td class="n">${it.qty}</td><td class="n">${R(it.amt)}</td><td>${bar(it.amt,r.items[0].amt)}<span class="sm">${it.share}%</span></td><td class="n">${it.rate}%</td><td><span class="abc ${it.abc}">${it.abc}</span></td></tr>`).join("")}</table>
+    <div class="note">等級 A＝合計貢獻 80% 營業額的主力品項；B＝接下來的 15%；C＝其餘。點購率＝有點這個品項的訂單比例。</div></div>
+  <div class="two"><div><h3>類別 By category</h3><div class="cardb"><table><tr><th>類別</th><th class="n">數量</th><th class="n">營業額</th><th class="n">占比</th></tr>${r.cats.map(c=>`<tr><td>${esc(c.name)}</td><td class="n">${c.qty}</td><td class="n">${R(c.amt)}</td><td class="n">${c.share}%</td></tr>`).join("")}</table></div></div>
+    <div><h3>沒賣出的品項 Unsold</h3><div class="cardb">${r.unsold.length?r.unsold.map(i=>`<span class="tag">${nmx(i)}${i.soldOut?"（售完中）":""}</span>`).join(" "):"全部品項都有賣出 ✔"}</div>
+    ${r.newItems.length?`<h3>新品表現 New items</h3><div class="cardb"><table><tr><th>新品</th><th>上架</th><th class="n">數量</th><th class="n">營業額</th></tr>${r.newItems.map(i=>`<tr><td>${nmx(i)}</td><td>${dkey(new Date(i.newAt)).slice(5)}</td><td class="n">${i.qty}</td><td class="n">${R(i.amt)}</td></tr>`).join("")}</table></div>`:""}</div></div>
+  <h3>客人消費習慣 Customer behaviour</h3>
+  <div class="two"><div class="cardb"><b>每單消費金額分布</b><table>${r.bands.map(b=>`<tr><td style="width:34%">${b.label}</td><td>${bar(b.n,mx(r.bands.map(x=>x.n)),"b")}</td><td class="n" style="width:30%;white-space:nowrap">${b.n} 單 · ${pct(b.n,r.count)}%</td></tr>`).join("")}</table></div>
+    <div class="cardb"><b>每單件數分布</b><table>${r.sizes.map(b=>`<tr><td style="width:34%">${b.label}</td><td>${bar(b.n,mx(r.sizes.map(x=>x.n)),"b")}</td><td class="n" style="width:30%;white-space:nowrap">${b.n} 單 · ${pct(b.n,r.count)}%</td></tr>`).join("")}</table></div></div>
+  <div class="kpis" style="margin-top:8px"><div class="kpi"><span>主餐加飲料比例 Drink attach</span><b>${r.mainOrders?r.drinkAttach+"%":"—"}</b></div><div class="kpi"><span>有加點的訂單 Add-on orders</span><b>${r.addonOrders} 筆 · ${pct(r.addonOrders,r.count)}%</b></div><div class="kpi"><span>有備註或客製的品項 Customised</span><b>${pct(r.noted,r.lines)}%</b></div><div class="kpi"><span>有填稱呼的訂單 Named</span><b>${pct(r.namedOrders,r.count)}%</b></div></div>
+  <div class="two"><div><h3>常一起點的組合 Bought together</h3><div class="cardb">${r.pairs.length?`<table><tr><th>組合</th><th class="n">訂單數</th></tr>${r.pairs.map(x=>`<tr><td>${nmx(x.a)} ＋ ${nmx(x.b)}</td><td class="n">${x.n}</td></tr>`).join("")}</table>`:"資料還不夠（同一組合至少出現 2 次才列出）"}</div></div>
+    <div><h3>熱門客製 Popular options</h3><div class="cardb">${r.mods.length?`<table><tr><th>客製</th><th class="n">次數</th><th class="n">加價收入</th></tr>${r.mods.slice(0,10).map(m=>`<tr><td>${esc(m.k)}</td><td class="n">${m.n}</td><td class="n">${m.amt?R(m.amt):"—"}</td></tr>`).join("")}</table>`:"本月沒有客製紀錄"}</div></div></div>
+  <div class="two"><div><h3>訂單來源 By source</h3><div class="cardb"><table><tr><th>來源</th><th class="n">筆數</th><th class="n">營業額</th><th class="n">客單價</th><th class="n">占比</th></tr>${r.sources.map(g=>`<tr><td>${esc(g.k)}</td><td class="n">${g.n}</td><td class="n">${R(g.amt)}</td><td class="n">${R(g.avg)}</td><td class="n">${g.share}%</td></tr>`).join("")}</table></div></div>
+    <div><h3>取餐方式與付款 Type &amp; payment</h3><div class="cardb"><table>${r.types.map(g=>`<tr><td>${esc(g.k)}</td><td class="n">${g.n} 筆</td><td class="n">${R(g.amt)}</td><td class="n">平均 ${R(g.avg)}</td></tr>`).join("")}</table><table style="margin-top:8px">${METHODS.map(([k])=>`<tr><td>${mName(k)}</td><td class="n">${R(r.methods[k]||0)}</td><td class="n">${pct(r.methods[k]||0,r.net)}%</td></tr>`).join("")}</table></div></div></div>
+  <h3>熟客 Regulars（依「稱呼」欄位）</h3><div class="cardb sx">${r.named.length?`<table><tr><th>稱呼</th><th class="n">次數</th><th class="n">消費</th><th class="n">客單價</th><th>最常點</th><th>最近一次</th></tr>${r.named.slice(0,15).map(c=>`<tr><td>${esc(c.name)}</td><td class="n">${c.n}</td><td class="n">${R(c.amt)}</td><td class="n">${R(c.avg)}</td><td>${esc(c.fav)}</td><td>${dkey(new Date(c.last)).slice(5)}</td></tr>`).join("")}</table>`:"本月沒有填稱呼的訂單"}
+    <div class="note">同一位客人每次要填一樣的稱呼才會合併計算。</div></div>
+  <h3>每日營業 Daily sales</h3><div class="cardb sx"><table><tr><th>日期</th><th>星期</th><th class="n">筆數</th><th class="n">營業額</th><th style="width:30%"></th><th class="n">客單價</th></tr>
+    ${r.days.map(d=>`<tr${d.n?"":' style="color:var(--muted)"'}><td>${d.k.slice(5)}</td><td>${WD[d.wd]}</td><td class="n">${d.n||"—"}</td><td class="n">${d.n?R(d.amt):"休息／無"}</td><td>${d.n?bar(d.amt,daysMax,"g"):""}</td><td class="n">${d.n?R(rnd100(d.amt/d.n)):""}</td></tr>`).join("")}
+    <tr><td colspan="2"><b>合計</b></td><td class="n"><b>${r.count}</b></td><td class="n"><b>${R(r.net)}</b></td><td></td><td class="n"><b>${R(r.avg)}</b></td></tr></table></div>
+  <div class="two"><div><h3>星期分析 By weekday</h3><div class="cardb"><table><tr><th>星期</th><th class="n">天數</th><th>每天平均營業額</th><th class="n">每天平均筆數</th></tr>${WD_ORDER.map(i=>r.wd[i]).map(w=>`<tr><td>週${WD[w.i]} ${WDE[w.i]}</td><td class="n">${w.days}</td><td>${w.days?`${bar(w.avgDay,wdMax,"a")}<span class="sm">${R(w.avgDay)}</span>`:"—"}</td><td class="n">${w.days?w.avgN.toFixed(1):"—"}</td></tr>`).join("")}</table></div></div>
+    <div><h3>時段熱度 Busy hours（訂單數）</h3><div class="cardb sx"><table class="heat"><tr><th></th>${hrs.map(h=>`<th>${h}</th>`).join("")}</tr>${WD_ORDER.map(i=>`<tr><th>${WD[i]}</th>${hrs.map(h=>{const v=r.heat[i][h],a=v/heatMax;return `<td style="background:rgba(217,68,47,${(a*0.9).toFixed(2)});${a>0.5?"color:#fff;":""}">${v||""}</td>`;}).join("")}</tr>`).join("")}</table><div class="note">數字＝該星期幾、該小時的訂單總數；顏色越深越忙。</div></div></div></div>
+  ${r.voidCount||r.openCount?`<h3>作廢與未結帳</h3><div class="cardb"><table><tr><td>作廢 Voids</td><td class="n">${r.voidCount} 筆</td><td class="n">${R(r.voidTotal)}</td></tr><tr><td>未結帳 Unpaid（未算入營業額）</td><td class="n">${r.openCount} 筆</td><td class="n">${R(r.openTotal)}</td></tr></table></div>`:""}`;
+}
+function monthBanner(){
+  const cur=ymOf(dkey()),pv=prevYm(cur),t=new Date();let h="";
+  if(S.prevHasOrders&&!S.months[pv])h+=`<div class="tip row" style="margin:0 0 10px"><span style="flex:1">⚠ 上個月（${ymLabel(pv)}）還沒月結</span><button class="btn" style="padding:8px 14px;min-height:40px" data-act="goMonth" data-v="${pv}">去月結 Close</button></div>`;
+  if(t.getDate()===daysIn(cur)&&S.date===dkey())h+=`<div class="tip" style="margin:0 0 10px;background:var(--blue);color:#fff">今天是 ${+cur.slice(5)} 月最後一天：收班點完錢後，到「月報 Monthly」按「月結」。明天起會自動開始新月份的統計。</div>`;
+  return h;
+}
+function vMonth(){
+  const r=S.mRep;if(!r)return `<div class="empty">載入中…</div>`;
+  const st=S.months[r.ym],cur=ymOf(dkey());
+  let status;
+  if(st)status=`<div class="tip" style="margin:0 0 8px;background:var(--green);color:#fff">✔ 已於 ${dtstr(st.closedAt)} 月結（當時營業額 ${R(st.net)}、${st.count} 筆）</div>`+((st.net!==r.net||st.count!==r.count)?`<div class="tip" style="margin:0 0 8px">⚠ 月結後資料有變動，現在是 ${R(r.net)}、${r.count} 筆。如果是補登或作廢造成的，請按「重新月結」。</div>`:"");
+  else if(r.ym<cur)status=`<div class="tip" style="margin:0 0 8px">這個月已經結束，還沒月結。確認資料無誤後按「月結」。</div>`;
+  else status=`<div class="tip" style="margin:0 0 8px;background:var(--card2);color:var(--text)">本月進行中，統計到今天為止。月底最後一天收班後按「月結」。</div>`;
+  return `<h2>月報表 Monthly report · ${ymLabel(r.ym)}</h2>
+    <div class="row" style="margin-bottom:10px"><input type="month" id="monthSel" value="${r.ym}" max="${cur}" style="width:200px" aria-label="月份"/><button class="btn ghost" style="padding:10px 14px" data-act="goMonth" data-v="${cur}">本月 This month</button></div>
+    ${status}
+    <div class="row" style="margin-bottom:14px"><button class="btn ${st?"":"pri"}" style="padding:12px 18px" data-act="monthClose">${st?"重新月結 Re-close":"月結 Close month"}</button><button class="btn" style="padding:12px 18px" data-act="prMonth">列印月結單</button><button class="btn" style="padding:12px 18px" data-act="expMonth">匯出月報（可列印／分享）</button><button class="btn" style="padding:12px 18px" data-act="csvDays">每日營業 CSV</button><button class="btn" style="padding:12px 18px" data-act="csvItems">每日品項 CSV</button></div>
+    ${monthBody(r)}`;
+}
+const MCSS=`.bar{height:12px;background:var(--card2);border-radius:6px;overflow:hidden;min-width:50px;display:inline-block;width:calc(100% - 52px);vertical-align:middle}
+.bar i{display:block;height:100%;background:var(--red);border-radius:6px}.bar.g i{background:var(--green)}.bar.b i{background:var(--blue)}.bar.a i{background:var(--amber)}
+td>.bar:only-child{width:100%}.sm{display:inline-block;width:48px;text-align:right;font-size:12px;color:var(--muted);vertical-align:middle}
+.delta{display:block;font-size:13px;font-weight:700;margin-top:2px}.delta.up{color:var(--green)}.delta.dn{color:var(--red)}
+.ins{list-style:none;padding:0;margin:0}.ins li{padding:9px 12px;border-radius:8px;margin-bottom:6px;background:var(--card);border-left:5px solid var(--blue);line-height:1.55}
+.ins li.warn{border-left-color:var(--amber)}.ins li.good{border-left-color:var(--green)}
+.heat th,.heat td{text-align:center;font-size:12px;padding:5px 2px;min-width:24px}
+.abc{display:inline-block;min-width:22px;text-align:center;border-radius:5px;font-size:12px;font-weight:800;padding:1px 4px}.abc.A{background:var(--green);color:#fff}.abc.B{background:var(--amber);color:#111}.abc.C{background:var(--line);color:var(--text)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}.two>div>h3:first-child{margin-top:18px}
+.note{font-size:12px;color:var(--muted);margin-top:6px}.en2{font-size:12px;color:var(--muted)}.sx{overflow-x:auto}
+.cd{color:var(--amber);font-weight:800;margin-right:4px}
+.tabs2{display:flex;gap:6px;margin-bottom:12px}.tabs2 button{padding:10px 18px;border-radius:8px;min-height:44px;font-weight:700;background:var(--card);color:var(--muted)}.tabs2 button.on{background:var(--blue);color:#fff}
+@media (max-width:899px){.two{grid-template-columns:1fr}}`;
+document.head.insertAdjacentHTML("beforeend",`<style>${MCSS}</style>`);
+function monthExportHtml(r){
+  const s=S.settings;
+  return `<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>${esc(s.shopName)} 月報 ${r.ym}</title><style>
+:root{--bg:#fff;--panel:#fff;--card:#F3F4F6;--card2:#E5E7EB;--line:#D6D9E0;--text:#16171B;--muted:#5B6270;--red:#C0392B;--green:#1E8A57;--amber:#C98A1E;--blue:#2F6FDB}
+body{margin:0 auto;max-width:1040px;padding:24px;font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;color:var(--text);background:#fff;font-size:15px}
+h1{margin:0 0 4px;font-size:26px}h3{margin:20px 0 8px;font-size:17px}.meta{color:var(--muted);font-size:13px;margin-bottom:16px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}.kpi{background:var(--card);border-radius:10px;padding:10px}.kpi span{font-size:12px;color:var(--muted);display:block}.kpi b{font-size:20px}
+.cardb{border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px}
+table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:6px;border-bottom:1px solid var(--line)}th{color:var(--muted);font-weight:500;font-size:12px}td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+.tag{display:inline-block;font-size:12px;padding:2px 7px;border-radius:6px;background:var(--card2);margin:0 4px 4px 0}.empty{color:var(--muted);padding:30px;text-align:center}
+${MCSS}
+@media print{body{padding:0;font-size:12px}.cardb,.ins li,.kpi{break-inside:avoid}h3{break-after:avoid}}
+</style></head><body><h1>${esc(s.shopName)} ${esc(s.shopEn)} 月報 · ${ymLabel(r.ym)}</h1>
+<div class="meta">產出時間 ${dtstr(Date.now())}${S.months[r.ym]?` · 月結時間 ${dtstr(S.months[r.ym].closedAt)}`:" · 尚未月結"} · 營業額只計已結帳訂單</div>${monthBody(r)}</body></html>`;
+}
+function monthCanvas(r){
+  const s=S.settings,p=r.prev&&r.prev.count?r.prev:null,ch=(a,b)=>p&&b?` (${a>=b?"+":""}${pct(a-b,b)}%)`:"";
+  const rows=[{t:s.shopName+" "+s.shopEn,size:28,bold:true,align:"center"},{t:"月結單 Monthly Report",size:24,bold:true,align:"center"},{t:ymLabel(r.ym),size:26,bold:true,align:"center"},{t:"列印 "+dtstr(Date.now()),size:17,align:"center"},{line:2},
+    {t:"營業額 Net"+(r.inProgress?"（到今天）":""),r:R(r.net),size:26,bold:true},...(p&&!r.inProgress?[{t:"  vs 上月 "+R(p.net),r:ch(r.net,p.net).trim(),size:18}]:[]),{t:"訂單數 Orders",r:String(r.count),size:21},{t:"客單價 Avg",r:R(r.avg)+ch(r.avg,p&&p.avg),size:21},
+    {t:"營業天數 Days",r:String(r.openDays),size:21},{t:"每日平均 Per day",r:R(r.perDay)+ch(r.perDay,p&&p.perDay),size:21},{t:"折扣 Discounts",r:R(r.disc),size:21},{t:"作廢 Voids",r:r.voidCount+" / "+R(r.voidTotal),size:21},{line:1},{t:"付款方式 Payment",size:20,bold:true}];
+  METHODS.forEach(([k])=>rows.push({t:mName(k),r:R(r.methods[k]||0),size:20}));
+  rows.push({line:1},{t:"來源 Source",size:20,bold:true});r.sources.forEach(g=>rows.push({t:g.k+" ("+g.n+")",r:R(g.amt),size:20}));
+  rows.push({line:1},{t:"星期平均 Weekday avg/day",size:20,bold:true});WD_ORDER.forEach(i=>{const w=r.wd[i];if(w.days)rows.push({t:"週"+WD[i]+" ("+w.days+"天)",r:R(w.avgDay),size:20});});
+  rows.push({line:1},{t:"銷售前 15 名 Top 15",size:20,bold:true});r.items.slice(0,15).forEach((it,i)=>rows.push({t:(i+1)+". "+nm(it)+" x"+it.qty,r:R(it.amt),size:20}));
+  if(r.unsold.length)rows.push({line:1},{t:"未賣出 Unsold: "+r.unsold.map(nm).join("、"),size:19});
+  rows.push({line:2},{gap:36});return ticket(rows);
+}
+async function closeMonth(){
+  const r=S.mRep,cur=ymOf(dkey());
+  if(r.ym===cur&&new Date().getDate()!==daysIn(cur)&&!(await confirmBox(`${ymLabel(r.ym)}還沒結束，確定現在就月結？之後的訂單會讓月結數字不一致，月底需要重新月結。`,"仍要月結")))return;
+  if(r.openCount&&!(await confirmBox(`還有 ${r.openCount} 筆未結帳（${R(r.openTotal)}），月結不會計入這些金額。確定要月結？`,"仍要月結")))return;
+  if(!(await confirmBox(`月結 ${ymLabel(r.ym)}：營業額 ${R(r.net)}、${r.count} 筆訂單。確定？`,"月結 Close")))return;
+  S.months[r.ym]={closedAt:Date.now(),net:r.net,count:r.count,avg:r.avg,openDays:r.openDays,methods:r.methods};await save.months();
+  render();
+  modal(`<h3>✅ ${ymLabel(r.ym)} 月結完成</h3><div class="sum big"><span>營業額</span><span>${R(r.net)}</span></div><div class="sum"><span>訂單數</span><span>${r.count}</span></div>
+    <div style="color:var(--muted);font-size:14px;margin:10px 0">建議現在匯出月報存到 Google Drive 或傳到 WhatsApp，平板壞掉也不會遺失。下個月的統計會自動從零開始，這個月的訂單仍保留，隨時可以回來看。</div>
+    <div class="row"><button class="btn" style="flex:1" data-act="p">列印月結單</button><button class="btn pri" style="flex:1" data-act="e">匯出月報</button></div><div class="foot"><button class="btn ghost" data-act="x">完成 Done</button></div>`,
+    {p(){printCanvas(monthCanvas(r));},e(){download(`jiangway-月報-${r.ym}.html`,monthExportHtml(r),"text/html;charset=utf-8");toast("已匯出月報");},x(){closeModal();}});
+}
+function csvQ(v){let s=String(v??"");if(/^[=+\-@]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"';}
+Object.assign(A,{
+  async rtab(el){S.rtab=el.dataset.v;await loadReport();render();},
+  async goMonth(el){S.rtab="month";S.month=el.dataset.v;await loadReport();render();},
+  monthClose(){closeMonth();},
+  prMonth(){printCanvas(monthCanvas(S.mRep));},
+  expMonth(){const r=S.mRep;download(`jiangway-月報-${r.ym}.html`,monthExportHtml(r),"text/html;charset=utf-8");toast("已匯出，用瀏覽器開啟可列印成 PDF 或分享");},
+  csvDays(){const r=S.mRep;const rows=[["date","weekday","orders","net_R","avg_ticket_R"],...r.days.map(d=>[d.k,WDE[d.wd],d.n,d.amt/100,d.n?Math.round(d.amt/d.n)/100:0])];
+    download(`jiangway-daily-${r.ym}.csv`,"﻿"+rows.map(x=>x.map(csvQ).join(",")).join("\r\n"),"text/csv;charset=utf-8");toast("已匯出每日營業 CSV");},
+  csvItems(){const r=S.mRep,m={};r.orders.forEach(o=>o.lines.forEach(l=>{const k=o.dateKey+"|"+(l.itemId||nm(l));const x=m[k]=m[k]||{d:o.dateKey,code:l.code||"",name:l.name,en:l.nameEn||"",qty:0,amt:0};x.qty+=l.qty;x.amt+=lineCalc(l).net;}));
+    const rows=[["date","code","item","item_en","qty","net_R"],...Object.values(m).sort((a,b)=>a.d.localeCompare(b.d)||b.amt-a.amt).map(x=>[x.d,x.code,x.name,x.en,x.qty,x.amt/100])];
+    download(`jiangway-items-${r.ym}.csv`,"﻿"+rows.map(x=>x.map(csvQ).join(",")).join("\r\n"),"text/csv;charset=utf-8");toast("已匯出每日品項 CSV");},
+});
 
 /* ---------- 菜單管理 ---------- */
 function vMenu(){
@@ -715,16 +952,16 @@ Object.assign(A,{
   async chPin(){const a=await pinPad("輸入新的 PIN（4–8 位數）");if(a===null)return;if(a.length<4){toast("PIN 至少 4 位數");return;}const b=await pinPad("再輸入一次確認");if(a!==b){toast("兩次輸入不一致");return;}S.settings.pin=hash(a);await save.settings();toast("PIN 已更新");},
   async tgDiscPin(){S.settings.discPin=!S.settings.discPin;await save.settings();render();},
   testPrint(){printCanvas(ticket([{t:S.settings.shopName+" "+S.settings.shopEn,size:30,bold:true,align:"center"},{t:"測試列印 Test print",size:24,align:"center"},{line:1},{t:"中文字型正常 ✔",size:22},{t:"1234567890 R130",size:22},{t:dtstr(Date.now()),size:20},{gap:30}]));},
-  async backup(){const data={app:"jwpos",ver:APP_VER,exportedAt:new Date().toISOString(),settings:S.settings,menu:S.menu,days:S.days,held:S.held,orders:await DB.all()};download("jiangway-pos-backup-"+dkey()+".json",JSON.stringify(data),"application/json");toast("已匯出備份檔");},
-  async wipe(){const r=await form("清除所有訂單與日結紀錄（無法復原）",[{k:"v",label:"請輸入「清除」兩個字確認",type:"text"}],"清除");if(!r)return;if(r.v!=="清除"){toast("輸入不符，已取消");return;}await DB.clearOrders();S.days={};S.orders=[];await save.days();toast("已清除");render();},
+  async backup(){const data={app:"jwpos",ver:APP_VER,exportedAt:new Date().toISOString(),settings:S.settings,menu:S.menu,days:S.days,held:S.held,months:S.months,orders:await DB.all()};download("jiangway-pos-backup-"+dkey()+".json",JSON.stringify(data),"application/json");toast("已匯出備份檔");},
+  async wipe(){const r=await form("清除所有訂單與日結紀錄（無法復原）",[{k:"v",label:"請輸入「清除」兩個字確認",type:"text"}],"清除");if(!r)return;if(r.v!=="清除"){toast("輸入不符，已取消");return;}await DB.clearOrders();S.days={};S.months={};await save.months();S.orders=[];await save.days();toast("已清除");render();},
 });
 async function importBackup(file){
   if(!file)return;
   try{const d=JSON.parse(await file.text());if(d.app!=="jwpos"||!Array.isArray(d.orders)||!d.menu||!d.settings)throw new Error("不是江味齋 POS 的備份檔");
     if(!(await confirmBox(`匯入 ${d.orders.length} 筆訂單？會覆蓋這台平板目前的菜單、設定與訂單。`,"匯入 Import"))){render();return;}
     await DB.clearOrders();for(const o of d.orders)await DB.putOrder(o);
-    S.settings={...DEF_SETTINGS,...d.settings};S.menu=d.menu;S.days=d.days||{};S.held=d.held||[];
-    await Promise.all([save.settings(),save.menu(),save.days(),save.held()]);S.orders=await DB.byDate(S.date);toast("匯入完成");render();
+    S.settings={...DEF_SETTINGS,...d.settings};S.menu=d.menu;S.days=d.days||{};S.held=d.held||[];S.months=d.months||{};
+    await Promise.all([save.settings(),save.menu(),save.days(),save.held(),save.months()]);S.orders=await DB.byDate(S.date);toast("匯入完成");render();
   }catch(e){toast("匯入失敗："+(e&&e.message||e));render();}
 }
 
@@ -837,7 +1074,7 @@ function printCanvas(c){
 (async function init(){
   try{
     await DB.open();
-    const [st,menu,days,held,cart]=await Promise.all(["settings","menu","days","held","cart"].map(DB.get));
+    const [st,menu,days,held,cart,months]=await Promise.all(["settings","menu","days","held","cart","months"].map(DB.get));S.months=months||{};
     S.settings={...DEF_SETTINGS,...(st||{})};S.menu=menu||seedMenu();S.days=days||{};S.held=held||[];
     if(cart&&Array.isArray(cart.lines))S.cart={...newCart(),...cart};
     if(ensureCodes()||!menu)await save.menu();if(!st)await save.settings();
@@ -848,7 +1085,7 @@ function printCanvas(c){
   }catch(e){$("#app").innerHTML=`<div class="empty">無法開啟本機資料庫：${esc(e&&e.message||e)}<br/>請不要用無痕模式開啟，並確認瀏覽器允許儲存資料。</div>`;}
 })();
 if("serviceWorker" in navigator&&location.protocol.startsWith("http"))navigator.serviceWorker.register("sw.js").catch(()=>{});
-window.JWPOS={S,DB,calc,report,receiptCanvas,kitchenCanvas,reportCanvas,stack};
+window.JWPOS={S,DB,calc,report,monthReport,loadReport,monthExportHtml,monthCanvas,receiptCanvas,kitchenCanvas,reportCanvas,stack};
 </script>
 </body>
 </html>
